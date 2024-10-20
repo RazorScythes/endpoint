@@ -67,7 +67,6 @@ app.get("/", async function(req, res) {
 
 app.use('/user', user);
 
-const mongoose                  = require('mongoose')
 const User                      = require('./models/user.model')
 const bcrypt                    = require("bcryptjs")
 async function defaultAdmin() {
