@@ -66,30 +66,3 @@ app.get("/", async function(req, res) {
 })
 
 app.use('/user', user);
-
-const User                      = require('./models/user.model')
-const bcrypt                    = require("bcryptjs")
-async function defaultAdmin() {
-    let default_admin = await User.find({username: 'admin'})
-
-    if(default_admin.length > 0) return
-
-    let password = "481264"
-
-    try {
-        let hashedPassword = await bcrypt.hash(password, 12);
-
-        const newAccount = new User({
-            role : "Admin",
-            email: "jamesarviemaderas@gmail.com",
-            username : 'Zantei25',
-            password: hashedPassword
-        })
-        await newAccount.save().then(console.log("Default Admin created"));
-
-    } catch (error) {
-        console.log(error)
-    }
-}
-
-defaultAdmin()
