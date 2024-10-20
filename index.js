@@ -9,7 +9,7 @@ const mongoose                  = require('mongoose')
 require('dotenv').config();
 
 /* API */
-
+const user                      = require('./routes/user')
 
 const app   = express()
 const port  = process.env.PORT
@@ -64,3 +64,5 @@ app.use(cors({
 app.get("/", async function(req, res) {
     res.send(`GET Request`);
 })
+
+app.use('/user', user);
