@@ -8,7 +8,7 @@ const user                      = require('../controllers/user')
 const auth                      = require('../middleware/auth')
 
 // GET REQUEST
-router.post('/getUser', auth.authenticateToken, auth.userRequired, auth.allowCors(user.getUser));
+router.get('/getUser', auth.authenticateToken, auth.userRequired, auth.allowCors(user.getUser));
 
 // POST REQUEST
 router.post('/login', auth.allowCors(user.login));

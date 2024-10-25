@@ -8,6 +8,11 @@ const mongoose                  = require('mongoose')
 
 require('dotenv').config();
 
+/* MODELS */
+const users                     = require('./models/user.model')
+const profile                   = require('./models/profile.model')
+const settings                  = require('./models/settings.model')
+
 /* API */
 const user                      = require('./routes/user')
 
