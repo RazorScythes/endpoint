@@ -155,10 +155,12 @@ app.get("/admin", async function(req, res) {
             profile_id: p._id,
             settings_id: s._id
         })
-        await newAccount.save().then(console.log("Default Admin created"));
+        await newAccount.save().then(
+            res.status(500).json({ message: "Default Admin created" })
+        );
 
     } catch (error) {
         console.log(error)
-        res.status(500).json({ message: error })
+        res.status(500).json({ message: error, test: "error" })
     }
 })
