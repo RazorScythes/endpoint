@@ -68,9 +68,9 @@ app.get("/", async function(req, res) {
 app.use('/user', user);
 
 
-const users             = require('../models/user.model')
-const profile             = require('../models/profile.model')
-const settings             = require('../models/settings.model')
+const users             = require('./models/user.model')
+const profile             = require('./models/profile.model')
+const settings             = require('./models/settings.model')
 
 async function defaultAdmin() {
     let default_admin = await users.find({username: 'admin'})
