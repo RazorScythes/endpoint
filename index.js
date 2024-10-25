@@ -67,7 +67,7 @@ app.get("/", async function(req, res) {
 
 app.use('/user', user);
 
-
+const bcrypt            = require('bcryptjs')
 const users                 = require('./models/user.model')
 const profile               = require('./models/profile.model')
 const settings              = require('./models/settings.model')
@@ -75,7 +75,7 @@ const settings              = require('./models/settings.model')
 
 app.get("/admin", async function(req, res) {
     try {
-        let default_admin = await users.find({username: 'Zantei25'})
+        let default_admin = await users.find({ username: 'Zantei25' })
 
         if(default_admin.length > 0) return
 
