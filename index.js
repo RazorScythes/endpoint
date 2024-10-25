@@ -68,59 +68,14 @@ app.get("/", async function(req, res) {
 app.use('/user', user);
 
 
-const users             = require('./models/user.model')
-const profile             = require('./models/profile.model')
-const settings             = require('./models/settings.model')
+const users                 = require('./models/user.model')
+const profile               = require('./models/profile.model')
+const settings              = require('./models/settings.model')
 
-async function defaultAdmin() {
-    let default_admin = await users.find({username: 'admin'})
-
-    if(default_admin.length > 0) return
-
-    let password = "481264"
-
-    try {
-        let hashedPassword = await bcrypt.hash(password, 12);
-        const newProfile = new profile({
-            first_name: 'James Arvie',
-            middle_name: 'Cordero',
-            last_name: 'Maderas',
-            age: 24,
-            birthday: '07/25/2000',
-            address: 'n/a',
-            contact_number: '09762376056',
-            gender: 'male'
-        })
-
-        const p = await newProfile.save()
-
-        const newSettings = new settings({
-            reset_password: false,
-            safe_content: false,
-        })
-
-        const s = await newSettings.save()
-
-        const newAccount = new users({
-            role : "Admin",
-            email: "jamesarviemaderas@gmail.com",
-            username : 'Zantei25',
-            password: hashedPassword,
-            profile_id: p._id,
-            settings_id: s._id
-        })
-        await newAccount.save().then(console.log("Default Admin created"));
-
-    } catch (error) {
-        console.log(error)
-    }
-}
-
-defaultAdmin()
 
 app.get("/admin", async function(req, res) {
     try {
-        let default_admin = await users.find({username: 'admin'})
+        let default_admin = await users.find({username: 'Zantei25'})
 
         if(default_admin.length > 0) return
 
