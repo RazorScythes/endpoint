@@ -1,11 +1,12 @@
 const jwt                   = require('jsonwebtoken');
+const users                 = require('../models/user.model')
 
 exports.authenticateToken = async (req, res, next) => {
     const header = req.headers['authorization'];
     const token = header?.split(' ')[1];
     
     if (!token) {
-        return res.status(401).json({ message: 'Unauthorized', type: 0 });
+        return res.status(401).json({ message: 'Unauthorized', variant: 'danger', type: 0 });
     }
   
     try {
@@ -14,7 +15,37 @@ exports.authenticateToken = async (req, res, next) => {
 
         next();
     } catch (error) {
-        return res.status(403).json({ message: 'Session Expired', type: 0 });
+        return res.status(403).json({ message: 'Session Expired', variant: 'danger', type: 0 });
+    }
+}
+
+exports.adminAccess = async (req, res, next) => {
+    const role = req.token.role
+
+    try {
+        if (role !== 'Admin') { throw new Error('unauthorized'); }
+
+        next()
+    } catch (error) {
+        return res.status(401).json({ message: error.message, variant: 'danger', type: 0 });
+    }
+}
+
+exports.userRequired = async (req, res, next) => {
+    const id = req.token.id
+
+    try {
+        if(!id) { throw new Error('user not found') }
+
+        const user = await users.findById(id).populate('profile_id').populate('settings_id')
+
+        if (!user) { throw new Error('user not found') }
+
+        req.token.user = user;
+        
+        next()
+    } catch (error) {
+        return res.status(401).json({ message: error.message, variant: 'danger', type: 0 });
     }
 }
 
