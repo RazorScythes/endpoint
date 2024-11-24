@@ -24,6 +24,7 @@ exports.login = async (req, res) => {
         
         const profile = {
             _id             : data._id,
+            avatar          : data.avatar,
             first_name      : data.profile_id.first_name,
             last_name       : data.profile_id.last_name,
             username        : data.username,

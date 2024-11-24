@@ -9,12 +9,15 @@ const mongoose                  = require('mongoose')
 require('dotenv').config();
 
 /* MODELS */
-const users                     = require('./models/user.model')
-const profile                   = require('./models/profile.model')
-const settings                  = require('./models/settings.model')
+require('./models/user.model')
+require('./models/video.model')
+require('./models/profile.model')
+require('./models/settings.model')
+require('./models/grouplist.model')
 
 /* API */
 const user                      = require('./routes/user')
+const account                   = require('./routes/account')
 
 const app   = express()
 const port  = process.env.PORT
@@ -71,3 +74,4 @@ app.get("/", async function(req, res) {
 })
 
 app.use('/user', user);
+app.use('/account', account);
