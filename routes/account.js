@@ -7,13 +7,4 @@ const account                   = require('../controllers/account')
 */
 const auth                      = require('../middleware/auth')
 
-// GET REQUEST
-router.get('/getGroups/:id/:type', auth.allowCors(account.getGroups));
-
-// POST REQUEST
-router.post('/newGroups', auth.allowCors(account.newGroups));
-
-// PATCH REQUEST
-router.patch('/updateGroups', auth.allowCors(account.updateGroups));
-
 module.exports = router
