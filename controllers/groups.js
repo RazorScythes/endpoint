@@ -24,9 +24,10 @@ const getGroupsWithVideoCounts = async (type, userId) => {
 };
 
 exports.getGroups = async (req, res) => {
-    const { id, type } = req.params;
+    const { user } = req.token;
+    const { type } = req.params;
 
-    if (!type || !id) {
+    if (!type) {
         return res.status(403).json({ alert: {
             variant: 'danger', 
             message: 'invalid parameter' 
@@ -34,7 +35,7 @@ exports.getGroups = async (req, res) => {
     }
 
     try {
-        const groups = await getGroupsWithVideoCounts(type, id)
+        const groups = await getGroupsWithVideoCounts(type, user._id)
 
         res.status(200).json({ result: groups });
     } catch (err) {
@@ -49,14 +50,15 @@ exports.getGroups = async (req, res) => {
 }
 
 exports.newGroups = async (req, res) => {
-    const { id, data } = req.body
+    const { user } = req.token;
+    const { data } = req.body
 
     try {
         const newGroups = new Groups(data)
 
         await newGroups.save()
 
-        const groups = await getGroupsWithVideoCounts(data.type, id)
+        const groups = await getGroupsWithVideoCounts(data.type, user._id)
         return res.status(200).json({ 
             result: groups,
             alert: {
@@ -77,19 +79,13 @@ exports.newGroups = async (req, res) => {
 }
 
 exports.updateGroups = async (req, res) => {
-    const { id, data } = req.body
+    const { user } = req.token;
+    const { data } = req.body
 
     try {
-        if (!id) {
-            return res.status(403).json({ alert: {
-                variant: 'danger', 
-                message: 'unauthorized' 
-            } });
-        }
-
         await Groups.findByIdAndUpdate(data.id, data, { new: true })
 
-        const groups = await getGroupsWithVideoCounts(data.type, id)
+        const groups = await getGroupsWithVideoCounts(data.type, user._id)
 
         return res.status(200).json({ 
             result: groups,
@@ -111,19 +107,20 @@ exports.updateGroups = async (req, res) => {
 }
 
 exports.deleteGroups = async (req, res) => {
-    const { id, user, type } = req.params
+    const { user } = req.token;
+    const { id, type } = req.params
 
     try {
-        if (!id || !type) {
+        if (!type) {
             return res.status(403).json({ alert: {
                 variant: 'danger', 
-                message: 'unauthorized' 
+                message: 'invalid parameter' 
             } });
         }
 
         await Groups.findByIdAndDelete(id)
 
-        const groups = await getGroupsWithVideoCounts(type, user)
+        const groups = await getGroupsWithVideoCounts(type, user._id)
 
         return res.status(200).json({ 
             result: groups,
@@ -145,13 +142,14 @@ exports.deleteGroups = async (req, res) => {
 }
 
 exports.deleteMultipleGroups = async (req, res) => {
-    const { ids, user, type } = req.body
+    const { user } = req.token;
+    const { ids, type } = req.body
 
     try {
         if (ids.length === 0 || !type) {
             return res.status(403).json({ alert: {
                 variant: 'danger', 
-                message: 'unauthorized' 
+                message: 'invalid parameter' 
             } });
         }
 
@@ -159,7 +157,7 @@ exports.deleteMultipleGroups = async (req, res) => {
 
         await Groups.deleteMany({ _id: { $in: objectIdsToDelete } })
 
-        const groups = await getGroupsWithVideoCounts(type, user)
+        const groups = await getGroupsWithVideoCounts(type, user._id)
 
         return res.status(200).json({ 
             result: groups,

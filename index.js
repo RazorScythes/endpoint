@@ -19,6 +19,7 @@ require('./models/grouplist.model')
 const user                      = require('./routes/user')
 const account                   = require('./routes/account')
 const groups                    = require('./routes/groups')
+const videos                    = require('./routes/videos')
 
 const app   = express()
 const port  = process.env.PORT
@@ -77,3 +78,4 @@ app.get("/", async function(req, res) {
 app.use('/user', user);
 app.use('/account', account);
 app.use('/groups', groups);
+app.use('/videos', videos);
