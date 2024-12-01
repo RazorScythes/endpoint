@@ -59,6 +59,34 @@ exports.newVideo = async (req, res) => {
     }
 }
 
+exports.updateVideo = async (req, res) => {
+    const { user } = req.token;
+    const { data } = req.body
+    
+    try {
+        await Video.findByIdAndUpdate(data._id, data, { new: true })
+
+        const video = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+
+        return res.status(200).json({ 
+            result: video,
+            alert: {
+                variant: "info",
+                heading: "",
+                message: "Video updated"
+            }
+        })
+    } catch(err) {
+        console.log(err)
+        return res.status(500).json({ 
+            alert: {
+                variant: 'danger', 
+                message: 'internal server error' 
+            }
+        })
+    }
+}
+
 exports.updateVideoSettings = async (req, res) => {
     const { id, type, value } = req.body
 
