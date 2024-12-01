@@ -16,5 +16,9 @@ router.post('/newVideo', auth.authenticateToken, auth.userRequired, auth.allowCo
 // PATCH REQUEST
 router.patch('/updateVideo', auth.authenticateToken, auth.userRequired, auth.allowCors(videos.updateVideo));
 router.patch('/updateVideoSettings', auth.authenticateToken, auth.userRequired, auth.allowCors(videos.updateVideoSettings));
+router.patch('/deleteMultipleVideos', auth.authenticateToken, auth.userRequired, auth.allowCors(videos.deleteMultipleVideos));
+
+// DELETE REQUEST
+router.delete('/deleteVideo/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(videos.deleteVideo));
 
 module.exports = router

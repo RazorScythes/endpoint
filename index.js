@@ -14,6 +14,7 @@ require('./models/video.model')
 require('./models/profile.model')
 require('./models/settings.model')
 require('./models/grouplist.model')
+require('./models/comment.model')
 
 /* API */
 const user                      = require('./routes/user')

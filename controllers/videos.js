@@ -1,4 +1,5 @@
 const Video              = require('../models/video.model')
+const mongoose           = require('mongoose');
 
 const videoSettings = (type, value) => {
     if(type === 'strict') return { label: 'Strict mode', data: { strict: value } };
@@ -36,10 +37,10 @@ exports.newVideo = async (req, res) => {
 
         await newVideo.save()
 
-        const video = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+        const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
     
         res.status(200).json({ 
-            result: video,
+            result: videos,
             alert: {
                 variant: 'success', 
                 message: 'Video uploaded successfully' 
@@ -47,10 +48,10 @@ exports.newVideo = async (req, res) => {
         });
     }
     else {
-        const video = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+        const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
     
         res.status(200).json({ 
-            result: video,
+            result: videos,
             alert: {
                 variant: 'danger', 
                 message: 'Video already exists' 
@@ -66,14 +67,86 @@ exports.updateVideo = async (req, res) => {
     try {
         await Video.findByIdAndUpdate(data._id, data, { new: true })
 
-        const video = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+        const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
 
         return res.status(200).json({ 
-            result: video,
+            result: videos,
             alert: {
                 variant: "info",
                 heading: "",
                 message: "Video updated"
+            }
+        })
+    } catch(err) {
+        console.log(err)
+        return res.status(500).json({ 
+            alert: {
+                variant: 'danger', 
+                message: 'internal server error' 
+            }
+        })
+    }
+}
+
+exports.deleteVideo = async (req, res) => {
+    const { user } = req.token;
+    const { id } = req.params
+    
+    try {
+        if (!id) {
+            return res.status(403).json({ alert: {
+                variant: 'danger', 
+                message: 'invalid parameter' 
+            } });
+        }
+
+        await Video.findByIdAndDelete(id)
+
+        const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+
+        return res.status(200).json({ 
+            result: videos,
+            alert: {
+                variant: "warning",
+                heading: "",
+                message: "Video deleted"
+            }
+        })
+    } catch(err) {
+        console.log(err)
+        return res.status(500).json({ 
+            alert: {
+                variant: 'danger', 
+                message: 'internal server error' 
+            }
+        })
+    }
+}
+
+exports.deleteMultipleVideos = async (req, res) => {
+    const { user } = req.token;
+    const { ids } = req.body
+
+    try {
+        if (ids.length === 0) {
+            return res.status(403).json({ alert: {
+                variant: 'danger', 
+                message: 'invalid parameter' 
+            } });
+        }
+
+        const objectIdsToDelete = ids.map(id => new mongoose.Types.ObjectId(id));
+
+        await Video.deleteMany({ _id: { $in: objectIdsToDelete } })
+
+        const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+
+        return res.status(200).json({ 
+            result: videos,
+            alert: {
+                variant: "warning",
+                heading: "",
+                message: "Videos deleted"
             }
         })
     } catch(err) {
