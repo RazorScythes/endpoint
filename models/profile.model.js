@@ -5,6 +5,7 @@ const schema = Schema({
     first_name: { type: String },
     middle_name: { type: String },
     last_name: { type: String },
+    bio: { type: String },
     age: { type: Number },
     birthday: { type: String },
     address: { type: String },
