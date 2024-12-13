@@ -14,7 +14,7 @@
     ],
     "crons": [
         {
-            "path": "/api/tags.js",
+            "path": "/tags/updateTagsCount",
             "schedule": "1 5 * * *"
         }
     ]
