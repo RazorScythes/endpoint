@@ -14,13 +14,15 @@ require('./models/video.model')
 require('./models/profile.model')
 require('./models/settings.model')
 require('./models/grouplist.model')
+require('./models/tags.model')
 require('./models/comment.model')
 
 /* API */
 const user                      = require('./routes/user')
 const account                   = require('./routes/account')
-const groups                    = require('./routes/groups')
+const groups                    = require('./routes/groups') 
 const videos                    = require('./routes/videos')
+const tags                      = require('./routes/tags')
 
 const app   = express()
 const port  = process.env.PORT
@@ -79,4 +81,5 @@ app.get("/", async function(req, res) {
 app.use('/user', user);
 app.use('/account', account);
 app.use('/groups', groups);
+app.use('/tags', tags);
 app.use('/videos', videos);
