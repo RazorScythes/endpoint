@@ -1,7 +1,7 @@
 const Tags               = require('../models/tags.model')
 const Video              = require('../models/video.model')
 
-export default async function updateTagsCount (req, res) {
+module.exports = async (req, res) => {
     const tags = await Tags.find(); 
 
     const tagCounts = await Promise.all(
