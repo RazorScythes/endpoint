@@ -14,7 +14,7 @@
     ],
     "crons": [
         {
-            "path": "./cron/tags.js",
+            "path": "/api/tags.js",
             "schedule": "1 5 * * *"
         }
     ]
