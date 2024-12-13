@@ -59,10 +59,20 @@ exports.getTags = async (req, res) => {
 }
 
 exports.newTags = async (req, res) => {
-    const { user } = req.token;
     const { data } = req.body
 
     try {
+        const existing = await Tags.findOne({ name: data.name });      
+ 
+        if(existing) {
+            return res.status(500).json({ 
+                alert: {
+                    variant: 'danger', 
+                    message: 'Tags already existing' 
+                }
+            }) 
+        }
+
         const newTags = new Tags(data)
 
         await newTags.save()
@@ -150,7 +160,6 @@ exports.deleteTags = async (req, res) => {
 }
 
 exports.deleteMultipleTags = async (req, res) => {
-    const { user } = req.token;
     const { ids, type } = req.body
 
     try {
