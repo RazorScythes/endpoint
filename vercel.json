@@ -11,5 +11,11 @@
             "src": "/(.*)",
             "dest": "index.js"
         }
+    ],
+    "crons": [
+        {
+            "path": "https://endpoint-rho-six.vercel.app/tags/updateTagsCount",
+            "schedule": "1 5 * * *"
+        }
     ]
 }
