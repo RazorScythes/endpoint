@@ -14,7 +14,7 @@
     ],
     "crons": [
         {
-            "path": "https://endpoint-rho-six.vercel.app/tags/updateTagsCount",
+            "path": "/cron/tags.js",
             "schedule": "1 5 * * *"
         }
     ]
