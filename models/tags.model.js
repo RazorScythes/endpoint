@@ -7,6 +7,7 @@ const tagsSchema = new Schema({
         ref:'User'
     },
     name: { type: String },
+    description: { type: String },
     type: { type: String },
     count: { 
         type: Number, 

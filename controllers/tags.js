@@ -1,4 +1,3 @@
-const Groups             = require('../models/grouplist.model')
 const Tags               = require('../models/tags.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
@@ -6,7 +5,7 @@ const mongoose           = require('mongoose');
 exports.updateTagsCount = async (req, res) => {
     const tags = await Tags.find(); 
 
-    const tagCounts = await Promise.all(
+    const result = await Promise.all(
         tags.map(async (tag) => {
             const count = await Video.countDocuments({ "tags._id": tag._id.toString() });
             await Tags.findByIdAndUpdate(tag._id, { count }, { new: true });
@@ -19,9 +18,8 @@ exports.updateTagsCount = async (req, res) => {
         })
     );
     
-    res.status(200).json(tagCounts)
+    res.status(200).json(result)
 };
-
 
 exports.getTags = async (req, res) => {
     const { type, options } = req.params;
@@ -68,7 +66,7 @@ exports.newTags = async (req, res) => {
             return res.status(500).json({ 
                 alert: {
                     variant: 'danger', 
-                    message: 'Tags already existing' 
+                    message: 'Tag already exists' 
                 }
             }) 
         }
@@ -84,7 +82,7 @@ exports.newTags = async (req, res) => {
             alert: {
                 variant: "success",
                 heading: "",
-                message: "Tags added"
+                message: "Tag added"
             }
         })
     } catch(err) {
@@ -111,7 +109,7 @@ exports.updateTags = async (req, res) => {
             alert: {
                 variant: "info",
                 heading: "",
-                message: "Tags updated"
+                message: "Tag updated"
             }
         })
     } catch(err) {
@@ -145,7 +143,7 @@ exports.deleteTags = async (req, res) => {
             alert: {
                 variant: "warning",
                 heading: "",
-                message: "Tags deleted"
+                message: "Tag deleted"
             }
         })
     } catch(err) {

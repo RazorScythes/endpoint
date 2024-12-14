@@ -16,6 +16,10 @@
         {
             "path": "/tags/updateTagsCount",
             "schedule": "1 5 * * *"
+        },
+        {
+            "path": "/videos/updateVideoProperties",
+            "schedule": "2 5 * * *"
         }
     ]
 }

@@ -1,4 +1,5 @@
 const Video              = require('../models/video.model')
+const Tags               = require('../models/tags.model')
 const mongoose           = require('mongoose');
 
 const videoSettings = (type, value) => {
@@ -6,6 +7,37 @@ const videoSettings = (type, value) => {
     else if(type === 'privacy') return { label: 'Visibility', data: { privacy: value } };
     else if(type === 'downloadable') return { label: 'Downloadable', data: { downloadable: value } };
     else return {};
+}
+
+exports.updateVideoProperties = async (req, res) => {
+    const videos = await Video.find();
+
+    const result = await Promise.all(
+        videos.map(async (video) => {
+            if(video.tags.length > 0) {
+                const data = await Promise.all (
+                    video.tags.map(async (tag) => {
+                        const t = await Tags.findById(tag?._id);
+
+                        return t ? {
+                            _id: t._id,
+                            name: t.name,
+                            count: t.count,
+                            value: t._id
+                        } : null
+                    })
+                )
+
+                const filteredData = data.filter((item) => item !== null);
+
+                await Video.findByIdAndUpdate(video._id, { tags: filteredData }, { new: true });
+            }
+
+            return video;
+        })
+    )
+
+    res.status(200).json(result)
 }
 
 exports.getUserVideos = async (req, res) => {
