@@ -1,21 +1,21 @@
-const Tags               = require('../models/tags.model')
+const Category           = require('../models/category.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
 
-const tagsSettings = (type, value) => {
+const categorySettings = (type, value) => {
     if(type === 'strict') return { label: 'Strict mode', data: { strict: value } };
     else if(type === 'privacy') return { label: 'Visibility', data: { privacy: value } };
     else if(type === 'downloadable') return { label: 'Downloadable', data: { downloadable: value } };
     else return {};
 }
 
-exports.updateTagsCount = async (req, res) => {
-    const tags = await Tags.find(); 
+exports.updateCategoryCount = async (req, res) => {
+    const category = await Category.find(); 
 
     const result = await Promise.all(
-        tags.map(async (tag) => {
-            const count = await Video.countDocuments({ "tags._id": tag._id.toString() });
-            await Tags.findByIdAndUpdate(tag._id, { count }, { new: true });
+        category.map(async (tag) => {
+            const count = await Video.countDocuments({ "category._id": tag._id.toString() });
+            await Category.findByIdAndUpdate(tag._id, { count }, { new: true });
             
             return {
                 _id: tag._id,
@@ -28,7 +28,7 @@ exports.updateTagsCount = async (req, res) => {
     res.status(200).json(result)
 };
 
-exports.getTags = async (req, res) => {
+exports.getCategory = async (req, res) => {
     const { type, options } = req.params;
 
     if (!type) {
@@ -39,19 +39,18 @@ exports.getTags = async (req, res) => {
     }
 
     try {
-        const tags = options ? await Tags.aggregate([
+        const category = options ? await Category.aggregate([
                 { $match: { type } }, 
                 {
                 $project: {
                     _id: 1,
                     name: 1,
-                    count: 1,
                     value: '$_id',
                 },
                 },
-            ]) : await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+            ]) : await Category.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
-        res.status(200).json({ result: tags });
+        res.status(200).json({ result: category });
     } catch (err) {
         console.log(err)
         return res.status(500).json({ 
@@ -63,33 +62,33 @@ exports.getTags = async (req, res) => {
     }
 }
 
-exports.newTags = async (req, res) => {
+exports.newCategory = async (req, res) => {
     const { data } = req.body
 
     try {
-        const existing = await Tags.findOne({ name: data.name });      
+        const existing = await Category.findOne({ name: data.name });      
  
         if(existing) {
             return res.status(500).json({ 
                 alert: {
                     variant: 'danger', 
-                    message: 'Tag already exists' 
+                    message: 'Category already exists' 
                 }
             }) 
         }
 
-        const newTags = new Tags(data)
+        const newCategory = new Category(data)
 
-        await newTags.save()
+        await newCategory.save()
 
-        const tags = await Tags.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const category = await Category.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: category,
             alert: {
                 variant: "success",
                 heading: "",
-                message: "Tag added"
+                message: "Category added"
             }
         })
     } catch(err) {
@@ -103,20 +102,20 @@ exports.newTags = async (req, res) => {
     }
 }
 
-exports.updateTags = async (req, res) => {
+exports.updateCategory = async (req, res) => {
     const { data } = req.body
 
     try {
-        await Tags.findByIdAndUpdate(data.id, data, { new: true })
+        await Category.findByIdAndUpdate(data.id, data, { new: true })
 
-        const tags = await Tags.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const category = await Category.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: category,
             alert: {
                 variant: "info",
                 heading: "",
-                message: "Tag updated"
+                message: "Category updated"
             }
         })
     } catch(err) {
@@ -130,7 +129,7 @@ exports.updateTags = async (req, res) => {
     }
 }
 
-exports.deleteTags = async (req, res) => {
+exports.deleteCategory = async (req, res) => {
     const { id, type } = req.params
 
     try {
@@ -141,16 +140,16 @@ exports.deleteTags = async (req, res) => {
             } });
         }
 
-        await Tags.findByIdAndDelete(id)
+        await Category.findByIdAndDelete(id)
 
-        const tags = await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const category = await Category.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: category,
             alert: {
                 variant: "warning",
                 heading: "",
-                message: "Tag deleted"
+                message: "Category deleted"
             }
         })
     } catch(err) {
@@ -164,7 +163,7 @@ exports.deleteTags = async (req, res) => {
     }
 }
 
-exports.deleteMultipleTags = async (req, res) => {
+exports.deleteMultipleCategory = async (req, res) => {
     const { ids, type } = req.body
 
     try {
@@ -177,16 +176,16 @@ exports.deleteMultipleTags = async (req, res) => {
 
         const objectIdsToDelete = ids.map(id => new mongoose.Types.ObjectId(id));
 
-        await Tags.deleteMany({ _id: { $in: objectIdsToDelete } })
+        await Category.deleteMany({ _id: { $in: objectIdsToDelete } })
 
-        const tags = await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const category = await Category.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: category,
             alert: {
                 variant: "warning",
                 heading: "",
-                message: "Tags deleted"
+                message: "Category deleted"
             }
         })
     } catch(err) {
@@ -200,11 +199,11 @@ exports.deleteMultipleTags = async (req, res) => {
     }
 }
 
-exports.updateTagsSettings = async (req, res) => {
+exports.updateCategorySettings = async (req, res) => {
     const { id, type, value } = req.body
 
     try {    
-        const settings = tagsSettings(type, value)
+        const settings = categorySettings(type, value)
 
         if(!settings) {
             return res.status(403).json({ alert: {
@@ -213,7 +212,7 @@ exports.updateTagsSettings = async (req, res) => {
             } });
         }
         
-        const result = await Tags.findByIdAndUpdate(id, settings.data, { new: true }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const result = await Category.findByIdAndUpdate(id, settings.data, { new: true }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         res.status(200).json({ 
             result,

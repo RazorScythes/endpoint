@@ -1,7 +1,8 @@
 const mongoose      = require('mongoose')
 const Schema        = mongoose.Schema
 
-const tagsSchema = new Schema({
+const categorySchema = new Schema({
+    image: { type: String },
     user: {
         type: Schema.Types.ObjectId,
         ref:'User'
@@ -13,12 +14,12 @@ const tagsSchema = new Schema({
         type: Number, 
         default: 0 
     },
-    strict: { type: Boolean },
+    strict: { type: Boolean }
 },{
     timestamps: true,
-    collection: "taglist"
+    collection: "category"
 })
 
-const Tags = mongoose.model('Tags', tagsSchema)
+const Category = mongoose.model('Category', categorySchema)
 
-module.exports = Tags
+module.exports = Category

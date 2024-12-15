@@ -1,7 +1,7 @@
 const mongoose      = require('mongoose')
 const Schema        = mongoose.Schema
 
-const tagsSchema = new Schema({
+const authorSchema = new Schema({
     user: {
         type: Schema.Types.ObjectId,
         ref:'User'
@@ -12,13 +12,12 @@ const tagsSchema = new Schema({
     count: { 
         type: Number, 
         default: 0 
-    },
-    strict: { type: Boolean },
+    }
 },{
     timestamps: true,
-    collection: "taglist"
+    collection: "author"
 })
 
-const Tags = mongoose.model('Tags', tagsSchema)
+const Author = mongoose.model('Author', authorSchema)
 
-module.exports = Tags
+module.exports = Author

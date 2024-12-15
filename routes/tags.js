@@ -19,6 +19,7 @@ router.post('/newTags', auth.authenticateToken, auth.userRequired, auth.allowCor
 // PATCH REQUEST
 router.patch('/updateTags', auth.authenticateToken, auth.userRequired, auth.adminAccess, auth.allowCors(tags.updateTags));
 router.patch('/deleteMultipleTags', auth.authenticateToken, auth.userRequired, auth.adminAccess, auth.allowCors(tags.deleteMultipleTags));
+router.patch('/updateTagsSettings', auth.authenticateToken, auth.userRequired, auth.allowCors(tags.updateTagsSettings));
 
 // DELETE REQUEST
 router.delete('/deleteTags/:id/:type', auth.authenticateToken, auth.userRequired, auth.adminAccess, auth.allowCors(tags.deleteTags));

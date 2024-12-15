@@ -15,6 +15,8 @@ require('./models/profile.model')
 require('./models/settings.model')
 require('./models/grouplist.model')
 require('./models/tags.model')
+require('./models/category.model')
+require('./models/author.model')
 require('./models/comment.model')
 
 /* API */
@@ -23,6 +25,8 @@ const account                   = require('./routes/account')
 const groups                    = require('./routes/groups') 
 const videos                    = require('./routes/videos')
 const tags                      = require('./routes/tags')
+const category                  = require('./routes/category')
+const author                    = require('./routes/author')
 
 const app   = express()
 const port  = process.env.PORT
@@ -82,4 +86,6 @@ app.use('/user', user);
 app.use('/account', account);
 app.use('/groups', groups);
 app.use('/tags', tags);
+app.use('/category', category);
+app.use('/author', author);
 app.use('/videos', videos);

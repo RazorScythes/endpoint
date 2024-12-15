@@ -18,8 +18,16 @@
             "schedule": "1 5 * * *"
         },
         {
+            "path": "/category/updateCategoryCount",
+            "schedule": "1 5 * * *"
+        },
+        {
+            "path": "/author/updateAuthorCount",
+            "schedule": "1 5 * * *"
+        },
+        {
             "path": "/videos/updateVideoProperties",
-            "schedule": "2 5 * * *"
+            "schedule": "10 5 * * *"
         }
     ]
 }

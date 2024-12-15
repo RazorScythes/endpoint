@@ -1,5 +1,7 @@
 const Video              = require('../models/video.model')
 const Tags               = require('../models/tags.model')
+const Category           = require('../models/category.model')
+const Author             = require('../models/author.model')
 const mongoose           = require('mongoose');
 
 const videoSettings = (type, value) => {
@@ -20,10 +22,10 @@ exports.updateVideoProperties = async (req, res) => {
                         const t = await Tags.findById(tag?._id);
 
                         return t ? {
-                            _id: t._id,
+                            _id: t._id.toString(),
                             name: t.name,
                             count: t.count,
-                            value: t._id
+                            value: t._id.toString()
                         } : null
                     })
                 )
@@ -31,6 +33,42 @@ exports.updateVideoProperties = async (req, res) => {
                 const filteredData = data.filter((item) => item !== null);
 
                 await Video.findByIdAndUpdate(video._id, { tags: filteredData }, { new: true });
+            }
+
+            if(video.category.length > 0) {
+                const data = await Promise.all (
+                    video.category.map(async (cat) => {
+                        const c = await Category.findById(cat?._id);
+
+                        return c ? {
+                            _id: c._id.toString(),
+                            name: c.name,
+                            value: c._id.toString()
+                        } : null
+                    })
+                )
+
+                const filteredData = data.filter((item) => item !== null);
+
+                await Video.findByIdAndUpdate(video._id, { category: filteredData }, { new: true });
+            }
+
+            if(video.owner.length > 0) {
+                const data = await Promise.all (
+                    video.owner.map(async (author) => {
+                        const a = await Author.findById(author?._id);
+
+                        return a ? {
+                            _id: a._id.toString(),
+                            name: a.name,
+                            value: a._id.toString()
+                        } : null
+                    })
+                )
+
+                const filteredData = data.filter((item) => item !== null);
+
+                await Video.findByIdAndUpdate(video._id, { owner: filteredData }, { new: true });
             }
 
             return video;

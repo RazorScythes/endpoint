@@ -1,21 +1,14 @@
-const Tags               = require('../models/tags.model')
+const Author             = require('../models/author.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
 
-const tagsSettings = (type, value) => {
-    if(type === 'strict') return { label: 'Strict mode', data: { strict: value } };
-    else if(type === 'privacy') return { label: 'Visibility', data: { privacy: value } };
-    else if(type === 'downloadable') return { label: 'Downloadable', data: { downloadable: value } };
-    else return {};
-}
-
-exports.updateTagsCount = async (req, res) => {
-    const tags = await Tags.find(); 
+exports.updateAuthorCount = async (req, res) => {
+    const author = await Author.find(); 
 
     const result = await Promise.all(
-        tags.map(async (tag) => {
-            const count = await Video.countDocuments({ "tags._id": tag._id.toString() });
-            await Tags.findByIdAndUpdate(tag._id, { count }, { new: true });
+        author.map(async (tag) => {
+            const count = await Video.countDocuments({ "owner._id": tag._id.toString() });
+            await Author.findByIdAndUpdate(tag._id, { count }, { new: true });
             
             return {
                 _id: tag._id,
@@ -28,7 +21,7 @@ exports.updateTagsCount = async (req, res) => {
     res.status(200).json(result)
 };
 
-exports.getTags = async (req, res) => {
+exports.getAuthor = async (req, res) => {
     const { type, options } = req.params;
 
     if (!type) {
@@ -39,19 +32,18 @@ exports.getTags = async (req, res) => {
     }
 
     try {
-        const tags = options ? await Tags.aggregate([
+        const author = options ? await Author.aggregate([
                 { $match: { type } }, 
                 {
                 $project: {
                     _id: 1,
                     name: 1,
-                    count: 1,
                     value: '$_id',
                 },
                 },
-            ]) : await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+            ]) : await Author.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
-        res.status(200).json({ result: tags });
+        res.status(200).json({ result: author });
     } catch (err) {
         console.log(err)
         return res.status(500).json({ 
@@ -63,33 +55,33 @@ exports.getTags = async (req, res) => {
     }
 }
 
-exports.newTags = async (req, res) => {
+exports.newAuthor = async (req, res) => {
     const { data } = req.body
 
     try {
-        const existing = await Tags.findOne({ name: data.name });      
+        const existing = await Author.findOne({ name: data.name });      
  
         if(existing) {
             return res.status(500).json({ 
                 alert: {
                     variant: 'danger', 
-                    message: 'Tag already exists' 
+                    message: 'Author already exists' 
                 }
             }) 
         }
 
-        const newTags = new Tags(data)
+        const newAuthor = new Author(data)
 
-        await newTags.save()
+        await newAuthor.save()
 
-        const tags = await Tags.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const author = await Author.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: author,
             alert: {
                 variant: "success",
                 heading: "",
-                message: "Tag added"
+                message: "Author added"
             }
         })
     } catch(err) {
@@ -103,20 +95,20 @@ exports.newTags = async (req, res) => {
     }
 }
 
-exports.updateTags = async (req, res) => {
+exports.updateAuthor = async (req, res) => {
     const { data } = req.body
 
     try {
-        await Tags.findByIdAndUpdate(data.id, data, { new: true })
+        await Author.findByIdAndUpdate(data.id, data, { new: true })
 
-        const tags = await Tags.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const author = await Author.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: author,
             alert: {
                 variant: "info",
                 heading: "",
-                message: "Tag updated"
+                message: "Author updated"
             }
         })
     } catch(err) {
@@ -130,7 +122,7 @@ exports.updateTags = async (req, res) => {
     }
 }
 
-exports.deleteTags = async (req, res) => {
+exports.deleteAuthor = async (req, res) => {
     const { id, type } = req.params
 
     try {
@@ -141,16 +133,16 @@ exports.deleteTags = async (req, res) => {
             } });
         }
 
-        await Tags.findByIdAndDelete(id)
+        await Author.findByIdAndDelete(id)
 
-        const tags = await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const author = await Author.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: author,
             alert: {
                 variant: "warning",
                 heading: "",
-                message: "Tag deleted"
+                message: "Author deleted"
             }
         })
     } catch(err) {
@@ -164,7 +156,7 @@ exports.deleteTags = async (req, res) => {
     }
 }
 
-exports.deleteMultipleTags = async (req, res) => {
+exports.deleteMultipleAuthor = async (req, res) => {
     const { ids, type } = req.body
 
     try {
@@ -177,52 +169,19 @@ exports.deleteMultipleTags = async (req, res) => {
 
         const objectIdsToDelete = ids.map(id => new mongoose.Types.ObjectId(id));
 
-        await Tags.deleteMany({ _id: { $in: objectIdsToDelete } })
+        await Author.deleteMany({ _id: { $in: objectIdsToDelete } })
 
-        const tags = await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+        const author = await Author.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
         return res.status(200).json({ 
-            result: tags,
+            result: author,
             alert: {
                 variant: "warning",
                 heading: "",
-                message: "Tags deleted"
+                message: "Author deleted"
             }
         })
     } catch(err) {
-        console.log(err)
-        return res.status(500).json({ 
-            alert: {
-                variant: 'danger', 
-                message: 'internal server error' 
-            }
-        })
-    }
-}
-
-exports.updateTagsSettings = async (req, res) => {
-    const { id, type, value } = req.body
-
-    try {    
-        const settings = tagsSettings(type, value)
-
-        if(!settings) {
-            return res.status(403).json({ alert: {
-                variant: 'danger', 
-                message: 'invalid parameter' 
-            } });
-        }
-        
-        const result = await Tags.findByIdAndUpdate(id, settings.data, { new: true }).populate({ path: 'user', select: 'username role avatar' }).lean();
-
-        res.status(200).json({ 
-            result,
-            alert: {
-                variant: 'success', 
-                message: `${settings.label} updated`
-            }
-        });
-    } catch (err) {
         console.log(err)
         return res.status(500).json({ 
             alert: {
