@@ -7,9 +7,6 @@ const author                    = require('../controllers/author')
 */
 const auth                      = require('../middleware/auth')
 
-// CRON
-router.get('/updateAuthorCount', author.updateAuthorCount);
-
 // GET REQUEST
 router.get('/getAuthor/:type/:options?', auth.authenticateToken, auth.userRequired, auth.allowCors(author.getAuthor));
 

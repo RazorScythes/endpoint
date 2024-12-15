@@ -7,9 +7,6 @@ const videos                    = require('../controllers/videos')
 */
 const auth                      = require('../middleware/auth')
 
-// CRON
-router.get('/updateVideoProperties', videos.updateVideoProperties);
-
 // GET REQUEST
 router.get('/getUserVideos', auth.authenticateToken, auth.userRequired, auth.allowCors(videos.getUserVideos));
 

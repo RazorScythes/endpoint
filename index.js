@@ -27,6 +27,7 @@ const videos                    = require('./routes/videos')
 const tags                      = require('./routes/tags')
 const category                  = require('./routes/category')
 const author                    = require('./routes/author')
+const cron                      = require('./routes/cron')
 
 const app   = express()
 const port  = process.env.PORT
@@ -89,3 +90,4 @@ app.use('/tags', tags);
 app.use('/category', category);
 app.use('/author', author);
 app.use('/videos', videos);
+app.use('/cron', cron);

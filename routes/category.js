@@ -7,9 +7,6 @@ const category                  = require('../controllers/category')
 */
 const auth                      = require('../middleware/auth')
 
-// CRON
-router.get('/updateCategoryCount', category.updateCategoryCount);
-
 // GET REQUEST
 router.get('/getCategory/:type/:options?', auth.authenticateToken, auth.userRequired, auth.allowCors(category.getCategory));
 

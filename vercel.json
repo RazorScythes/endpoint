@@ -14,19 +14,11 @@
     ],
     "crons": [
         {
-            "path": "/tags/updateTagsCount",
+            "path": "/cron/updateListCount",
             "schedule": "1 5 * * *"
         },
         {
-            "path": "/category/updateCategoryCount",
-            "schedule": "1 5 * * *"
-        },
-        {
-            "path": "/author/updateAuthorCount",
-            "schedule": "1 5 * * *"
-        },
-        {
-            "path": "/videos/updateVideoProperties",
+            "path": "/cron/updateVideoProperties",
             "schedule": "10 5 * * *"
         }
     ]

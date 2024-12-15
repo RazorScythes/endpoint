@@ -9,25 +9,6 @@ const categorySettings = (type, value) => {
     else return {};
 }
 
-exports.updateCategoryCount = async (req, res) => {
-    const category = await Category.find(); 
-
-    const result = await Promise.all(
-        category.map(async (tag) => {
-            const count = await Video.countDocuments({ "category._id": tag._id.toString() });
-            await Category.findByIdAndUpdate(tag._id, { count }, { new: true });
-            
-            return {
-                _id: tag._id,
-                name: tag.name,
-                count
-            };
-        })
-    );
-    
-    res.status(200).json(result)
-};
-
 exports.getCategory = async (req, res) => {
     const { type, options } = req.params;
 

@@ -7,9 +7,6 @@ const tags                      = require('../controllers/tags')
 */
 const auth                      = require('../middleware/auth')
 
-// CRON
-router.get('/updateTagsCount', tags.updateTagsCount);
-
 // GET REQUEST
 router.get('/getTags/:type/:options?', auth.authenticateToken, auth.userRequired, auth.allowCors(tags.getTags));
 

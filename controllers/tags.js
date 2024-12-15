@@ -9,25 +9,6 @@ const tagsSettings = (type, value) => {
     else return {};
 }
 
-exports.updateTagsCount = async (req, res) => {
-    const tags = await Tags.find(); 
-
-    const result = await Promise.all(
-        tags.map(async (tag) => {
-            const count = await Video.countDocuments({ "tags._id": tag._id.toString() });
-            await Tags.findByIdAndUpdate(tag._id, { count }, { new: true });
-            
-            return {
-                _id: tag._id,
-                name: tag.name,
-                count
-            };
-        })
-    );
-    
-    res.status(200).json(result)
-};
-
 exports.getTags = async (req, res) => {
     const { type, options } = req.params;
 

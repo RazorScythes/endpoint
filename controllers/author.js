@@ -2,25 +2,6 @@ const Author             = require('../models/author.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
 
-exports.updateAuthorCount = async (req, res) => {
-    const author = await Author.find(); 
-
-    const result = await Promise.all(
-        author.map(async (tag) => {
-            const count = await Video.countDocuments({ "owner._id": tag._id.toString() });
-            await Author.findByIdAndUpdate(tag._id, { count }, { new: true });
-            
-            return {
-                _id: tag._id,
-                name: tag.name,
-                count
-            };
-        })
-    );
-    
-    res.status(200).json(result)
-};
-
 exports.getAuthor = async (req, res) => {
     const { type, options } = req.params;
 
