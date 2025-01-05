@@ -27,6 +27,7 @@ const videos                    = require('./routes/videos')
 const tags                      = require('./routes/tags')
 const category                  = require('./routes/category')
 const author                    = require('./routes/author')
+const watch                     = require('./routes/watch')
 const cron                      = require('./routes/cron')
 
 const app   = express()
@@ -90,4 +91,5 @@ app.use('/tags', tags);
 app.use('/category', category);
 app.use('/author', author);
 app.use('/videos', videos);
+app.use('/watch', watch);
 app.use('/cron', cron);

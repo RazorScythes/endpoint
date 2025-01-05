@@ -1,7 +1,4 @@
 const Video              = require('../models/video.model')
-const Tags               = require('../models/tags.model')
-const Category           = require('../models/category.model')
-const Author             = require('../models/author.model')
 const mongoose           = require('mongoose');
 
 const videoSettings = (type, value) => {
