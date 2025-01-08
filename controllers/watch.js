@@ -1,6 +1,7 @@
 const Video              = require('../models/video.model')
 const Comment            = require('../models/comment.model')
 const Users              = require('../models/user.model')
+const db                 = require('../plugins/database')
 
 exports.getVideoById = async (req, res) => {
     const { user } = req.token;
@@ -104,7 +105,7 @@ exports.getVideoComment = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const comments = await Comment.find({ parent_id: id }).populate({ path: 'user_id', select: 'username avatar' }).sort({ createdAt: -1 });
+        const comments = await db.getComments(id);
 
         res.status(200).json({ result: comments });
     } catch (err) {
@@ -134,8 +135,11 @@ exports.addVideoComment = async (req, res) => {
         const newComment = new Comment(req.body)
 
         await newComment.save()
+
+        const comments = await db.getComments(req.body.parent_id);
     
         res.status(200).json({ 
+            result: comments,
             alert: {
                 variant: 'success', 
                 message: 'Commented success' 
@@ -158,7 +162,7 @@ exports.updateVideoComment = async (req, res) => {
     try {
         await Comment.findByIdAndUpdate(data._id, data, { new: true })
 
-        const comments = await Comment.find({ parent_id: id }).populate({ path: 'user_id', select: 'username avatar' }).sort({ createdAt: -1 });
+        const comments = await db.getComments(id);
 
         return res.status(200).json({ 
             result: comments,
