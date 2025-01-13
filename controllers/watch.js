@@ -1,5 +1,6 @@
 const Video              = require('../models/video.model')
 const Comment            = require('../models/comment.model')
+const Groups             = require('../models/grouplist.model')
 const Users              = require('../models/user.model')
 const db                 = require('../plugins/database')
 
@@ -52,16 +53,13 @@ exports.getVideoById = async (req, res) => {
                     return res.status(409).json({ forbiden: 'strict'});
                 }
                 else if(video.privacy) { 
-                    console.log(video.access_key, access_key, video.user._id, user._id)
                     if(video.access_key === access_key || video.user._id.equals(user._id)) {
                         return res.status(200).json({ result });
                     }
                     else if(!access_key) {
-                        console.log(1)
                         return res.status(409).json({ forbiden: 'private' }); 
                     }
                     else {
-                        console.log(12)
                         return res.status(409).json({ forbiden: 'access_invalid' }); 
                     }
                 }
@@ -100,6 +98,46 @@ exports.getVideoById = async (req, res) => {
         })
     }
 }
+
+exports.getVideoList = async (req, res) => {
+    const { user } = req.token;
+    const { id } = req.params;
+
+    try {
+        const video = await Video.findById(id).select('_id thumbnail title views groups user downloadUrl duration');
+        const group = await Groups.findById(video.groups).select('group_name description strict privacy');
+        const settings = await Users.findById(user).populate('settings_id');
+
+        const getResponseData = async (videos) => ({
+            group_name: group.group_name,
+            description: group.description,
+            videos
+        });
+
+        let videos;
+        if (group.strict && settings.settings_id) {
+            videos = await Video.find({ groups: group._id }).select('_id thumbnail title views groups user downloadUrl duration');
+        } else if (group.privacy && video.user.equals(user._id)) {
+            videos = await Video.find({ groups: group._id }).select('_id thumbnail title views groups user downloadUrl duration');
+        } else if (!group.strict && !group.privacy) {
+            videos = await Video.find({ groups: group._id }).select('_id thumbnail title views groups user downloadUrl duration');
+        } else {
+            videos = [video];
+        }
+
+        const data = await getResponseData(videos);
+        return res.status(200).json({ result: data });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            alert: {
+                variant: 'danger',
+                message: 'internal server error'
+            }
+        });
+    }
+};
+
 
 exports.getVideoComment = async (req, res) => {
     const { id } = req.params;
@@ -142,7 +180,7 @@ exports.addVideoComment = async (req, res) => {
             result: comments,
             alert: {
                 variant: 'success', 
-                message: 'Commented success' 
+                message: 'Commented!' 
             }
         });
     } catch(err) {
@@ -165,11 +203,40 @@ exports.updateVideoComment = async (req, res) => {
         const comments = await db.getComments(id);
 
         return res.status(200).json({ 
+            result: comments
+        })
+    } catch(err) {
+        console.log(err)
+        return res.status(500).json({ 
+            alert: {
+                variant: 'danger', 
+                message: 'internal server error' 
+            }
+        })
+    }
+}
+
+exports.deleteVideoComment = async (req, res) => {
+    const { id, video_id } = req.params
+    
+    try {
+        if (!id) {
+            return res.status(403).json({ alert: {
+                variant: 'danger', 
+                message: 'invalid parameter' 
+            } });
+        }
+
+        await Comment.findByIdAndDelete(id)
+
+        const comments = await db.getComments(video_id);
+
+        return res.status(200).json({ 
             result: comments,
             alert: {
-                variant: "info",
+                variant: "warning",
                 heading: "",
-                message: "Comment updated"
+                message: "Deleted comment"
             }
         })
     } catch(err) {
