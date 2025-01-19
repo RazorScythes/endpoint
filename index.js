@@ -18,6 +18,7 @@ require('./models/tags.model')
 require('./models/category.model')
 require('./models/author.model')
 require('./models/comment.model')
+require('./models/docs.model')
 
 /* API */
 const user                      = require('./routes/user')
@@ -29,6 +30,7 @@ const category                  = require('./routes/category')
 const author                    = require('./routes/author')
 const watch                     = require('./routes/watch')
 const cron                      = require('./routes/cron')
+const documentation             = require('./routes/documentation')
 
 const app   = express()
 const port  = process.env.PORT
@@ -93,3 +95,4 @@ app.use('/author', author);
 app.use('/videos', videos);
 app.use('/watch', watch);
 app.use('/cron', cron);
+app.use('/documentation', documentation);
