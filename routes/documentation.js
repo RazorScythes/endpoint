@@ -8,6 +8,7 @@ const documentation             = require('../controllers/documentation')
 const auth                      = require('../middleware/auth')
 
 // GET REQUEST
+router.get('/getDocsById/:category?', auth.allowCors(documentation.getDocsById));
 router.get('/getDocs', auth.allowCors(documentation.getDocs));
 
 // POST REQUEST

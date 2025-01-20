@@ -48,6 +48,53 @@ exports.getDocs = async (req, res) => {
     }
 };
 
+exports.getDocsById = async (req, res) => {
+    const { category } = req.params; 
+
+    if (!category) {
+        return res.status(403).json({ alert: {
+            variant: 'danger', 
+            message: 'invalid parameter' 
+        } });
+    }
+
+    try {
+        const doc = await Docs.findOne({ doc_name: category }).lean()
+
+        if(!doc) {
+            return res.status(404).json({ alert: {
+                variant: 'danger', 
+                message: 'doc not found' 
+            } });
+        }
+
+        const doc_category = await DocsCategory.find({ doc: doc._id }).lean()
+
+        const data = await Promise.all(
+            doc_category.map(async (item) => {
+                const sub = await DocsSubCategory.find({ category: item._id });
+        
+                return {
+                    ...item,
+                    dropdown: sub,
+                    token: doc.token,
+                    base_url: doc.base_url,
+                };
+            })
+        );
+        
+        res.status(200).json({ result: data });
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ 
+            alert: {
+                variant: 'danger', 
+                message: 'internal server error' 
+            }
+        })
+    }
+}
+
 exports.newDocs = async (req, res) => {
     const { data } = req.body
 
