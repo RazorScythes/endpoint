@@ -12,7 +12,7 @@ const docsSubCategorySchema = new Schema({
     description: { type: String },
     endpoint: { type: String },
     token_required: { type: Boolean },
-    payload: { type: Boolean },
+    payload: { type: Array },
     type: { type: String },
     auto_response: { type: Boolean },
     response_result: { type: String }
