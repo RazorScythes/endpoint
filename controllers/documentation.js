@@ -24,7 +24,7 @@ exports.getDocs = async (req, res) => {
                 $lookup: {
                     from: "docsCategory", 
                     localField: "_id",      
-                    foreignField: "docId",
+                    foreignField: "docs",
                     as: "categories"
                 }
             },
@@ -125,7 +125,7 @@ exports.newDocs = async (req, res) => {
                 $lookup: {
                     from: "docsCategory", 
                     localField: "_id",      
-                    foreignField: "docId",
+                    foreignField: "docs",
                     as: "categories"
                 }
             },
@@ -171,7 +171,7 @@ exports.updateDocs = async (req, res) => {
                 $lookup: {
                     from: "docsCategory", 
                     localField: "_id",      
-                    foreignField: "docId",
+                    foreignField: "docs",
                     as: "categories"
                 }
             },
@@ -227,9 +227,9 @@ exports.updateDocsSettings = async (req, res) => {
             },
             {
                 $lookup: {
-                    from: "docscategories", 
+                    from: "docsCategory", 
                     localField: "_id",     
-                    foreignField: "docId", 
+                    foreignField: "docs", 
                     as: "categories"
                 }
             },
@@ -272,9 +272,9 @@ exports.deleteDocs = async (req, res) => {
         const docs = await Docs.aggregate([
             {
                 $lookup: {
-                    from: "docscategories", 
+                    from: "docsCategory", 
                     localField: "_id",     
-                    foreignField: "docId", 
+                    foreignField: "docs", 
                     as: "categories"
                 }
             },
@@ -327,9 +327,9 @@ exports.deleteMultipleDocs = async (req, res) => {
         const docs = await Docs.aggregate([
             {
                 $lookup: {
-                    from: "docscategories", 
+                    from: "docsCategory", 
                     localField: "_id",     
-                    foreignField: "docId", 
+                    foreignField: "docs", 
                     as: "categories"
                 }
             },
