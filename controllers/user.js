@@ -4,7 +4,218 @@ const Users             = require('../models/user.model')
 const Profile           = require('../models/profile.model')
 const Settings          = require('../models/settings.model')
 const ActivityLog       = require('../models/activitylog.model')
+const Ban               = require('../models/ban.model')
 const { logActivity }   = require('../plugins/logger')
+
+const VALID_ROLES = ['User', 'Moderator', 'Admin']
+
+const fetchAllUsers = async () => {
+    const users = await Users.find({})
+        .select('avatar username email role googleId subscribers verification contribution createdAt')
+        .populate('profile_id', 'first_name last_name bio age birthday address contact_number gender')
+        .sort({ createdAt: -1 })
+        .lean()
+
+    const bans = await Ban.find({}).populate('bannedBy', 'username').lean()
+    const banMap = {}
+    bans.forEach(b => { banMap[b.user.toString()] = b })
+
+    return users.map(u => ({
+        ...u,
+        ban: banMap[u._id.toString()] || null
+    }))
+}
+
+exports.getAllUsers = async (req, res) => {
+    try {
+        const users = await fetchAllUsers()
+        res.status(200).json({ result: users })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.updateUserRole = async (req, res) => {
+    const { userId, role } = req.body
+
+    if (!userId || !role) {
+        return res.status(400).json({
+            alert: { variant: 'danger', message: 'User ID and role are required' }
+        })
+    }
+
+    if (!VALID_ROLES.includes(role)) {
+        return res.status(400).json({
+            alert: { variant: 'danger', message: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` }
+        })
+    }
+
+    try {
+        const user = await Users.findById(userId)
+        if (!user) {
+            return res.status(404).json({
+                alert: { variant: 'danger', message: 'User not found' }
+            })
+        }
+
+        user.role = role
+        await user.save()
+
+        const users = await fetchAllUsers()
+
+        res.status(200).json({
+            result: users,
+            alert: { variant: 'success', message: `${user.username}'s role updated to ${role}` }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.deleteUser = async (req, res) => {
+    const { user } = req.token
+    const { id } = req.params
+
+    if (id === user._id.toString()) {
+        return res.status(400).json({
+            alert: { variant: 'danger', message: 'You cannot delete your own account from here' }
+        })
+    }
+
+    try {
+        const targetUser = await Users.findById(id)
+        if (!targetUser) {
+            return res.status(404).json({
+                alert: { variant: 'danger', message: 'User not found' }
+            })
+        }
+
+        await Users.findByIdAndDelete(id)
+        await Ban.deleteOne({ user: id })
+
+        const users = await fetchAllUsers()
+
+        res.status(200).json({
+            result: users,
+            alert: { variant: 'success', message: `${targetUser.username} has been deleted` }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.banUser = async (req, res) => {
+    const { user } = req.token
+    const { userId, duration, reason } = req.body
+
+    if (!userId || !duration) {
+        return res.status(400).json({
+            alert: { variant: 'danger', message: 'User ID and duration are required' }
+        })
+    }
+
+    if (userId === user._id.toString()) {
+        return res.status(400).json({
+            alert: { variant: 'danger', message: 'You cannot ban yourself' }
+        })
+    }
+
+    try {
+        const targetUser = await Users.findById(userId)
+        if (!targetUser) {
+            return res.status(404).json({
+                alert: { variant: 'danger', message: 'User not found' }
+            })
+        }
+
+        if (targetUser.role === 'Admin') {
+            return res.status(403).json({
+                alert: { variant: 'danger', message: 'Cannot ban an Admin' }
+            })
+        }
+
+        if (user.role === 'Moderator' && targetUser.role === 'Moderator') {
+            return res.status(403).json({
+                alert: { variant: 'danger', message: 'Moderators cannot ban other Moderators' }
+            })
+        }
+
+        let expiresAt = null
+        let permanent = false
+
+        if (duration === 'permanent') {
+            permanent = true
+        } else {
+            const days = parseInt(duration)
+            if (isNaN(days) || days <= 0) {
+                return res.status(400).json({
+                    alert: { variant: 'danger', message: 'Invalid duration' }
+                })
+            }
+            expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+        }
+
+        await Ban.findOneAndUpdate(
+            { user: userId },
+            {
+                user: userId,
+                bannedBy: user._id,
+                permanent,
+                expiresAt,
+                reason: reason || ''
+            },
+            { upsert: true, new: true }
+        )
+
+        const users = await fetchAllUsers()
+
+        res.status(200).json({
+            result: users,
+            alert: { variant: 'success', message: `${targetUser.username} has been banned${permanent ? ' permanently' : ` for ${duration} days`}` }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.unbanUser = async (req, res) => {
+    const { id } = req.params
+
+    try {
+        const targetUser = await Users.findById(id)
+        if (!targetUser) {
+            return res.status(404).json({
+                alert: { variant: 'danger', message: 'User not found' }
+            })
+        }
+
+        await Ban.deleteOne({ user: id })
+
+        const users = await fetchAllUsers()
+
+        res.status(200).json({
+            result: users,
+            alert: { variant: 'success', message: `${targetUser.username} has been unbanned` }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
 
 exports.register = async (req, res) => {
     const { username, email, password } = req.body;
@@ -90,7 +301,18 @@ exports.login = async (req, res) => {
         if(!compare) {
             return res.status(404).json({ message: "unknown username or password" })
         }
-        
+
+        const ban = await Ban.findOne({ user: data._id })
+        if (ban) {
+            const isBanned = ban.permanent || (ban.expiresAt && new Date(ban.expiresAt) > new Date())
+            if (isBanned) {
+                const msg = ban.permanent
+                    ? 'Your account has been permanently banned.'
+                    : `Your account is banned until ${new Date(ban.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`
+                return res.status(403).json({ message: msg, reason: ban.reason || '' })
+            }
+        }
+
         const profile = {
             _id             : data._id,
             avatar          : data.avatar,

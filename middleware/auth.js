@@ -1,5 +1,6 @@
 const jwt                   = require('jsonwebtoken');
 const users                 = require('../models/user.model')
+const Ban                   = require('../models/ban.model')
 
 require('dotenv').config();
 
@@ -39,6 +40,20 @@ exports.adminAccess = async (req, res, next) => {
     }
 }
 
+exports.moderatorAccess = async (req, res, next) => {
+    const role = req.token.role
+
+    try {
+        if (role !== 'Admin' && role !== 'Moderator') { throw new Error('Unauthorized'); }
+
+        next()
+    } catch (error) {
+        return res.status(401).json({
+            alert : { message: error.message, variant: 'danger', type: 0 }
+        });
+    }
+}
+
 exports.userRequired = async (req, res, next) => {
     const id = req.token.id
 
@@ -48,6 +63,20 @@ exports.userRequired = async (req, res, next) => {
         const user = await users.findById(id).populate('profile_id').populate('settings_id')
 
         if (!user) { throw new Error('User not found') }
+
+        const ban = await Ban.findOne({ user: id })
+        if (ban) {
+            const isBanned = ban.permanent || (ban.expiresAt && new Date(ban.expiresAt) > new Date())
+            if (isBanned) {
+                return res.status(403).json({
+                    alert: { 
+                        message: 'Your account has been banned.', 
+                        variant: 'danger', 
+                        type: 'banned' 
+                    }
+                })
+            }
+        }
 
         req.token.user = user;
         
