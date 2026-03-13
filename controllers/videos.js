@@ -1,5 +1,6 @@
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
+const { logActivity }    = require('../plugins/logger')
 
 const videoSettings = (type, value) => {
     if(type === 'strict') return { label: 'Strict mode', data: { strict: value } };
@@ -38,6 +39,12 @@ exports.newVideo = async (req, res) => {
         await newVideo.save()
 
         const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+
+        logActivity(req, {
+            action: 'create_video',
+            category: 'video',
+            message: `New video added: "${data.title || 'Untitled'}"`
+        })
     
         res.status(200).json({ 
             result: videos,
@@ -68,6 +75,12 @@ exports.updateVideo = async (req, res) => {
         await Video.findByIdAndUpdate(data._id, data, { new: true })
 
         const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+
+        logActivity(req, {
+            action: 'update_video',
+            category: 'video',
+            message: `Video updated: "${data.title || data._id}"`
+        })
 
         return res.status(200).json({ 
             result: videos,
@@ -103,6 +116,12 @@ exports.deleteVideo = async (req, res) => {
         await Video.findByIdAndDelete(id)
 
         const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
+
+        logActivity(req, {
+            action: 'delete_video',
+            category: 'video',
+            message: 'Video deleted'
+        })
 
         return res.status(200).json({ 
             result: videos,
@@ -141,6 +160,12 @@ exports.deleteMultipleVideos = async (req, res) => {
 
         const videos = await Video.find({ user: user._id }).sort({ createdAt: -1 }).populate('groups')
 
+        logActivity(req, {
+            action: 'delete_multiple_videos',
+            category: 'video',
+            message: `${ids.length} videos deleted`
+        })
+
         return res.status(200).json({ 
             result: videos,
             alert: {
@@ -174,6 +199,12 @@ exports.updateVideoSettings = async (req, res) => {
         }
         
         const result = await Video.findByIdAndUpdate(id, settings.data, { new: true }).populate('groups')
+
+        logActivity(req, {
+            action: 'update_video_settings',
+            category: 'video',
+            message: `Video ${settings.label} changed to "${value}"`
+        })
 
         res.status(200).json({ 
             result,

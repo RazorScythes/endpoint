@@ -4,6 +4,228 @@ const Groups             = require('../models/grouplist.model')
 const Users              = require('../models/user.model')
 const db                 = require('../plugins/database')
 
+exports.likeVideo = async (req, res) => {
+    const { user } = req.token
+    const { videoId } = req.body
+
+    try {
+        const video = await Video.findById(videoId)
+        if (!video) return res.status(404).json({ alert: { variant: 'danger', message: 'Video not found' } })
+
+        const userId = user._id.toString()
+        const alreadyLiked = video.likes.includes(userId)
+
+        if (alreadyLiked) {
+            video.likes = video.likes.filter(id => id !== userId)
+        } else {
+            video.likes.push(userId)
+            video.dislikes = video.dislikes.filter(id => id !== userId)
+        }
+
+        await video.save()
+
+        const result = { likes: video.likes, dislikes: video.dislikes }
+
+        const io = req.app.get('io')
+        io.to(`video:${videoId}`).emit('likes_updated', { videoId, ...result })
+
+        res.status(200).json({ result })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}
+
+exports.dislikeVideo = async (req, res) => {
+    const { user } = req.token
+    const { videoId } = req.body
+
+    try {
+        const video = await Video.findById(videoId)
+        if (!video) return res.status(404).json({ alert: { variant: 'danger', message: 'Video not found' } })
+
+        const userId = user._id.toString()
+        const alreadyDisliked = video.dislikes.includes(userId)
+
+        if (alreadyDisliked) {
+            video.dislikes = video.dislikes.filter(id => id !== userId)
+        } else {
+            video.dislikes.push(userId)
+            video.likes = video.likes.filter(id => id !== userId)
+        }
+
+        await video.save()
+
+        const result = { likes: video.likes, dislikes: video.dislikes }
+
+        const io = req.app.get('io')
+        io.to(`video:${videoId}`).emit('likes_updated', { videoId, ...result })
+
+        res.status(200).json({ result })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}
+
+exports.toggleSubscribe = async (req, res) => {
+    const { user } = req.token
+    const { targetUserId } = req.body
+
+    try {
+        if (!targetUserId) {
+            return res.status(400).json({ alert: { variant: 'danger', message: 'Target user is required' } })
+        }
+
+        const currentUserId = user._id.toString()
+
+        if (currentUserId === targetUserId) {
+            return res.status(400).json({ alert: { variant: 'danger', message: 'You cannot subscribe to your own account' } })
+        }
+
+        const targetUser = await Users.findById(targetUserId)
+        if (!targetUser) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'User not found' } })
+        }
+
+        if (!targetUser.subscribers) targetUser.subscribers = []
+
+        const alreadySubscribed = targetUser.subscribers.includes(currentUserId)
+
+        if (alreadySubscribed) {
+            targetUser.subscribers = targetUser.subscribers.filter(id => id !== currentUserId)
+        } else {
+            targetUser.subscribers.push(currentUserId)
+        }
+
+        await targetUser.save()
+
+        res.status(200).json({
+            result: { subscribers: targetUser.subscribers }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}
+
+exports.getVideosByType = async (req, res) => {
+    const { type } = req.params;
+    const { search, page = 1, limit = 20, filter = 'all', tag } = req.query;
+
+    if (!type) {
+        return res.status(400).json({ alert: { variant: 'danger', message: 'type is required' } });
+    }
+
+    try {
+        const publicGroups = await Groups.find({
+            strict: { $ne: true },
+            privacy: { $ne: true }
+        }).select('_id');
+
+        const groupIds = publicGroups.map(g => g._id);
+
+        if (groupIds.length === 0) {
+            return res.status(200).json({ result: [], total: 0, page: 1, totalPages: 0, tags: [] });
+        }
+
+        const baseMatch = {
+            groups: { $in: groupIds },
+            strict: { $ne: true },
+            privacy: { $ne: true }
+        };
+
+        if (search) {
+            baseMatch.title = { $regex: search, $options: 'i' };
+        }
+
+        const tagsAgg = await Video.aggregate([
+            { $match: baseMatch },
+            { $match: { tags: { $exists: true, $ne: [], $type: 'array' } } },
+            { $unwind: '$tags' },
+            { $group: { _id: '$tags.name', count: { $sum: 1 } } },
+            { $match: { _id: { $ne: null } } },
+            { $sort: { count: -1 } }
+        ]);
+        const availableTags = tagsAgg.map(t => ({ name: t._id, count: t.count }));
+
+        const matchStage = { ...baseMatch };
+        if (tag) {
+            matchStage['tags.name'] = tag;
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await Video.countDocuments(matchStage);
+
+        let sortStage;
+        switch (filter) {
+            case 'latest':
+                sortStage = { createdAt: -1 };
+                break;
+            case 'popular':
+                sortStage = { likesCount: -1, createdAt: -1 };
+                break;
+            case 'most_viewed':
+                sortStage = { viewsCount: -1, createdAt: -1 };
+                break;
+            default:
+                sortStage = { createdAt: -1 };
+        }
+
+        const pipeline = [
+            { $match: matchStage },
+            {
+                $addFields: {
+                    likesCount: { $size: { $ifNull: ['$likes', []] } },
+                    viewsCount: { $size: { $ifNull: ['$views', []] } }
+                }
+            },
+            { $sort: sortStage },
+            { $skip: skip },
+            { $limit: parseInt(limit) },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'user',
+                    foreignField: '_id',
+                    as: 'userData'
+                }
+            },
+            { $unwind: { path: '$userData', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    _id: 1,
+                    thumbnail: 1,
+                    title: 1,
+                    views: 1,
+                    likes: 1,
+                    tags: 1,
+                    duration: 1,
+                    downloadUrl: 1,
+                    createdAt: 1,
+                    user: { $ifNull: ['$userData.username', ''] },
+                    avatar: { $ifNull: ['$userData.avatar', ''] }
+                }
+            }
+        ];
+
+        const result = await Video.aggregate(pipeline);
+
+        return res.status(200).json({
+            result,
+            total,
+            page: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+            tags: availableTags
+        });
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        });
+    }
+};
+
 exports.getVideoById = async (req, res) => {
     const { user } = req.token;
     const { id, access_key } = req.params;
@@ -24,6 +246,7 @@ exports.getVideoById = async (req, res) => {
             id: video.user._id,
             username: video.user.username,
             avatar: video.user.avatar,
+            subscribers: video.user.subscribers || [],
             video
         };
         result.video['user'] = {};
@@ -175,7 +398,10 @@ exports.addVideoComment = async (req, res) => {
         await newComment.save()
 
         const comments = await db.getComments(req.body.parent_id);
-    
+
+        const io = req.app.get('io')
+        io.to(`video:${req.body.parent_id}`).emit('comments_updated', { videoId: req.body.parent_id, comments })
+
         res.status(200).json({ 
             result: comments,
             alert: {
@@ -201,6 +427,9 @@ exports.updateVideoComment = async (req, res) => {
         await Comment.findByIdAndUpdate(data._id, data, { new: true })
 
         const comments = await db.getComments(id);
+
+        const io = req.app.get('io')
+        io.to(`video:${id}`).emit('comments_updated', { videoId: id, comments })
 
         return res.status(200).json({ 
             result: comments
@@ -231,6 +460,9 @@ exports.deleteVideoComment = async (req, res) => {
 
         const comments = await db.getComments(video_id);
 
+        const io = req.app.get('io')
+        io.to(`video:${video_id}`).emit('comments_updated', { videoId: video_id, comments })
+
         return res.status(200).json({ 
             result: comments,
             alert: {
@@ -247,5 +479,30 @@ exports.deleteVideoComment = async (req, res) => {
                 message: 'internal server error' 
             }
         })
+    }
+}
+
+exports.viewVideo = async (req, res) => {
+    const { videoId, uid } = req.body;
+
+    if (!videoId || !uid) {
+        return res.status(400).json({ alert: { variant: 'danger', message: 'Missing required fields' } });
+    }
+
+    try {
+        const video = await Video.findByIdAndUpdate(
+            videoId,
+            { $addToSet: { views: uid } },
+            { new: true }
+        );
+
+        if (!video) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'Video not found' } });
+        }
+
+        return res.status(200).json({ result: { views: video.views } });
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } });
     }
 }

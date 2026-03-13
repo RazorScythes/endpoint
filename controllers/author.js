@@ -1,6 +1,7 @@
 const Author             = require('../models/author.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
+const { logActivity }    = require('../plugins/logger')
 
 exports.getAuthor = async (req, res) => {
     const { type, options } = req.params;
@@ -57,6 +58,12 @@ exports.newAuthor = async (req, res) => {
 
         const author = await Author.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
+        logActivity(req, {
+            action: 'create_author',
+            category: 'author',
+            message: `New author created: "${data.name}"`
+        })
+
         return res.status(200).json({ 
             result: author,
             alert: {
@@ -83,6 +90,12 @@ exports.updateAuthor = async (req, res) => {
         await Author.findByIdAndUpdate(data.id, data, { new: true })
 
         const author = await Author.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'update_author',
+            category: 'author',
+            message: `Author updated: "${data.name || data.id}"`
+        })
 
         return res.status(200).json({ 
             result: author,
@@ -117,6 +130,12 @@ exports.deleteAuthor = async (req, res) => {
         await Author.findByIdAndDelete(id)
 
         const author = await Author.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'delete_author',
+            category: 'author',
+            message: 'Author deleted'
+        })
 
         return res.status(200).json({ 
             result: author,
@@ -153,6 +172,12 @@ exports.deleteMultipleAuthor = async (req, res) => {
         await Author.deleteMany({ _id: { $in: objectIdsToDelete } })
 
         const author = await Author.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'delete_multiple_authors',
+            category: 'author',
+            message: `${ids.length} authors deleted`
+        })
 
         return res.status(200).json({ 
             result: author,

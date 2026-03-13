@@ -1,6 +1,7 @@
 const Tags               = require('../models/tags.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
+const { logActivity }    = require('../plugins/logger')
 
 const tagsSettings = (type, value) => {
     if(type === 'strict') return { label: 'Strict mode', data: { strict: value } };
@@ -65,6 +66,12 @@ exports.newTags = async (req, res) => {
 
         const tags = await Tags.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
+        logActivity(req, {
+            action: 'create_tag',
+            category: 'tag',
+            message: `New tag created: "${data.name}"`
+        })
+
         return res.status(200).json({ 
             result: tags,
             alert: {
@@ -91,6 +98,12 @@ exports.updateTags = async (req, res) => {
         await Tags.findByIdAndUpdate(data.id, data, { new: true })
 
         const tags = await Tags.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'update_tag',
+            category: 'tag',
+            message: `Tag updated: "${data.name || data.id}"`
+        })
 
         return res.status(200).json({ 
             result: tags,
@@ -125,6 +138,12 @@ exports.deleteTags = async (req, res) => {
         await Tags.findByIdAndDelete(id)
 
         const tags = await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'delete_tag',
+            category: 'tag',
+            message: 'Tag deleted'
+        })
 
         return res.status(200).json({ 
             result: tags,
@@ -161,6 +180,12 @@ exports.deleteMultipleTags = async (req, res) => {
         await Tags.deleteMany({ _id: { $in: objectIdsToDelete } })
 
         const tags = await Tags.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'delete_multiple_tags',
+            category: 'tag',
+            message: `${ids.length} tags deleted`
+        })
 
         return res.status(200).json({ 
             result: tags,

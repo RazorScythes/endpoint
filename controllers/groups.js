@@ -1,6 +1,7 @@
 const Groups             = require('../models/grouplist.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
+const { logActivity }    = require('../plugins/logger')
 
 const getGroupsWithVideoCounts = async (type, userId) => {
     const groups = await Groups.find({ type, user: userId }).lean();
@@ -59,6 +60,13 @@ exports.newGroups = async (req, res) => {
         await newGroups.save()
 
         const groups = await getGroupsWithVideoCounts(data.type, user._id)
+
+        logActivity(req, {
+            action: 'create_group',
+            category: 'group',
+            message: `New group created: "${data.group_name || 'Untitled'}"`
+        })
+
         return res.status(200).json({ 
             result: groups,
             alert: {
@@ -86,6 +94,12 @@ exports.updateGroups = async (req, res) => {
         await Groups.findByIdAndUpdate(data.id, data, { new: true })
 
         const groups = await getGroupsWithVideoCounts(data.type, user._id)
+
+        logActivity(req, {
+            action: 'update_group',
+            category: 'group',
+            message: `Group updated: "${data.group_name || data.id}"`
+        })
 
         return res.status(200).json({ 
             result: groups,
@@ -121,6 +135,12 @@ exports.deleteGroups = async (req, res) => {
         await Groups.findByIdAndDelete(id)
 
         const groups = await getGroupsWithVideoCounts(type, user._id)
+
+        logActivity(req, {
+            action: 'delete_group',
+            category: 'group',
+            message: 'Group deleted'
+        })
 
         return res.status(200).json({ 
             result: groups,
@@ -158,6 +178,12 @@ exports.deleteMultipleGroups = async (req, res) => {
         await Groups.deleteMany({ _id: { $in: objectIdsToDelete } })
 
         const groups = await getGroupsWithVideoCounts(type, user._id)
+
+        logActivity(req, {
+            action: 'delete_multiple_groups',
+            category: 'group',
+            message: `${ids.length} groups deleted`
+        })
 
         return res.status(200).json({ 
             result: groups,

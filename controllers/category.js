@@ -1,6 +1,7 @@
 const Category           = require('../models/category.model')
 const Video              = require('../models/video.model')
 const mongoose           = require('mongoose');
+const { logActivity }    = require('../plugins/logger')
 
 const categorySettings = (type, value) => {
     if(type === 'strict') return { label: 'Strict mode', data: { strict: value } };
@@ -64,6 +65,12 @@ exports.newCategory = async (req, res) => {
 
         const category = await Category.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
 
+        logActivity(req, {
+            action: 'create_category',
+            category: 'category',
+            message: `New category created: "${data.name}"`
+        })
+
         return res.status(200).json({ 
             result: category,
             alert: {
@@ -90,6 +97,12 @@ exports.updateCategory = async (req, res) => {
         await Category.findByIdAndUpdate(data.id, data, { new: true })
 
         const category = await Category.find({ type: data.type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'update_category',
+            category: 'category',
+            message: `Category updated: "${data.name || data.id}"`
+        })
 
         return res.status(200).json({ 
             result: category,
@@ -124,6 +137,12 @@ exports.deleteCategory = async (req, res) => {
         await Category.findByIdAndDelete(id)
 
         const category = await Category.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'delete_category',
+            category: 'category',
+            message: 'Category deleted'
+        })
 
         return res.status(200).json({ 
             result: category,
@@ -160,6 +179,12 @@ exports.deleteMultipleCategory = async (req, res) => {
         await Category.deleteMany({ _id: { $in: objectIdsToDelete } })
 
         const category = await Category.find({ type }).populate({ path: 'user', select: 'username role avatar' }).lean();
+
+        logActivity(req, {
+            action: 'delete_multiple_categories',
+            category: 'category',
+            message: `${ids.length} categories deleted`
+        })
 
         return res.status(200).json({ 
             result: category,

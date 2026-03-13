@@ -12,6 +12,8 @@ router.get('/getProfile', auth.authenticateToken, auth.userRequired, auth.allowC
 
 // POST REQUEST
 router.post('/login', auth.allowCors(user.login));
+router.post('/register', auth.allowCors(user.register));
+router.post('/googleLogin', auth.allowCors(user.googleLogin));
 router.post('/updateProfile', auth.authenticateToken, auth.userRequired, auth.allowCors(user.updateProfile));
 
 module.exports = router

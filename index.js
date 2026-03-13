@@ -5,6 +5,8 @@ const cors                      = require('cors')
 const morgan                    = require('morgan')
 const path                      = require('path')
 const mongoose                  = require('mongoose')
+const http                      = require('http')
+const { Server }                = require('socket.io')
 
 require('dotenv').config();
 
@@ -19,6 +21,11 @@ require('./models/category.model')
 require('./models/author.model')
 require('./models/comment.model')
 require('./models/docs.model')
+require('./models/activitylog.model')
+require('./models/playlist.model')
+require('./models/report.model')
+require('./models/conversation.model')
+require('./models/message.model')
 
 /* API */
 const user                      = require('./routes/user')
@@ -31,10 +38,45 @@ const author                    = require('./routes/author')
 const watch                     = require('./routes/watch')
 const cron                      = require('./routes/cron')
 const documentation             = require('./routes/documentation')
+const playlist                  = require('./routes/playlist')
+const chat                      = require('./routes/chat')
 
-const app   = express()
-const port  = process.env.PORT
-const db    = mongoose.connection
+const app    = express()
+const server = http.createServer(app)
+const io     = new Server(server, {
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST', 'PATCH', 'DELETE']
+    }
+})
+const port   = process.env.PORT
+const db     = mongoose.connection
+
+io.on('connection', (socket) => {
+    socket.on('join_video', (videoId) => {
+        socket.join(`video:${videoId}`)
+    })
+
+    socket.on('leave_video', (videoId) => {
+        socket.leave(`video:${videoId}`)
+    })
+
+    socket.on('join_chat', (userId) => {
+        socket.join(`user:${userId}`)
+    })
+
+    socket.on('typing', ({ conversationId, recipientId, username }) => {
+        io.to(`user:${recipientId}`).emit('typing', { conversationId, username })
+    })
+
+    socket.on('stop_typing', ({ conversationId, recipientId }) => {
+        io.to(`user:${recipientId}`).emit('stop_typing', { conversationId })
+    })
+
+    socket.on('disconnect', () => {})
+})
+
+app.set('io', io)
 
 /* START SERVER */
 mongoose.connect(process.env.MONGODB_URI, {   
@@ -42,7 +84,7 @@ mongoose.connect(process.env.MONGODB_URI, {
     useUnifiedTopology: true
 })
 .then(() => {
-    app.listen(port, (err) => {
+    server.listen(port, (err) => {
         if(err) throw err
         console.log(`Server is running on PORT: ${port}`)
     })
@@ -96,3 +138,5 @@ app.use('/videos', videos);
 app.use('/watch', watch);
 app.use('/cron', cron);
 app.use('/documentation', documentation);
+app.use('/playlist', playlist);
+app.use('/chat', chat);

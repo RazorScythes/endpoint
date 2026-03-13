@@ -29,6 +29,7 @@
     "morgan": "^1.10.0",
     "nodemailer": "^6.9.1",
     "nodemon": "^3.1.7",
+    "socket.io": "^4.8.3",
     "stream": "^0.0.2",
     "uuid": "^9.0.0",
     "vercel": "^28.17.0"

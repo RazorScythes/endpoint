@@ -15,6 +15,8 @@ const schema = Schema({
         type: Schema.Types.ObjectId,
         ref: 'Settings'
     },
+    googleId: { type: String },
+    subscribers: [{ type: String }],
     verification: {
         verified: { type: Boolean },
         verification_token: { type: String },
