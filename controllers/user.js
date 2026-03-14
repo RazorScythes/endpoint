@@ -1,11 +1,13 @@
 const bcrypt            = require('bcryptjs')
 const jwt               = require('jsonwebtoken')
+const crypto            = require('crypto')
 const Users             = require('../models/user.model')
 const Profile           = require('../models/profile.model')
 const Settings          = require('../models/settings.model')
 const ActivityLog       = require('../models/activitylog.model')
 const Ban               = require('../models/ban.model')
 const { logActivity }   = require('../plugins/logger')
+const { sendMail }      = require('../plugins/mail')
 
 const VALID_ROLES = ['User', 'Moderator', 'Admin']
 
@@ -259,8 +261,11 @@ exports.register = async (req, res) => {
             first_name: '',
             last_name: '',
             username: user.username,
+            email: user.email,
             role: user.role,
             bio: '',
+            googleId: null,
+            verification: { verified: false }
         };
 
         const token = jwt.sign(
@@ -319,8 +324,11 @@ exports.login = async (req, res) => {
             first_name      : data.profile_id.first_name,
             last_name       : data.profile_id.last_name,
             username        : data.username,
+            email           : data.email,
             role            : data.role,
-            bio             : data.profile_id.bio
+            bio             : data.profile_id.bio,
+            googleId        : data.googleId || null,
+            verification    : data.verification || { verified: false }
         }
 
         const token = jwt.sign({ 
@@ -392,8 +400,11 @@ exports.googleLogin = async (req, res) => {
             first_name: user.profile_id?.first_name,
             last_name: user.profile_id?.last_name,
             username: user.username,
+            email: user.email,
             role: user.role,
             bio: user.profile_id?.bio,
+            googleId: user.googleId || null,
+            verification: user.verification || { verified: true }
         };
 
         const token = jwt.sign(
@@ -497,5 +508,298 @@ exports.updateProfile = async (req, res) => {
                 message: 'internal server error' 
             }
         })
+    }
+}
+
+exports.getSettings = async (req, res) => {
+    try {
+        const { user } = req.token
+
+        const settings = user.settings_id || {}
+
+        res.status(200).json({
+            result: {
+                safe_content: settings.safe_content ?? true,
+                reset_password: settings.reset_password ?? false,
+                email: user.email,
+                username: user.username,
+                role: user.role,
+                googleId: user.googleId || null,
+                verified: user.verification?.verified ?? false,
+            }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.updateSettings = async (req, res) => {
+    const { user } = req.token
+    const updates = req.body
+
+    try {
+        const allowed = ['safe_content', 'reset_password']
+        const filtered = {}
+        for (const key of allowed) {
+            if (updates[key] !== undefined) filtered[key] = updates[key]
+        }
+
+        if (Object.keys(filtered).length === 0) {
+            return res.status(400).json({
+                alert: { variant: 'danger', message: 'No valid settings to update' }
+            })
+        }
+
+        const updatedSettings = await Settings.findByIdAndUpdate(
+            user.settings_id._id,
+            filtered,
+            { new: true }
+        )
+
+        logActivity(req, {
+            action: 'update_settings',
+            category: 'settings',
+            message: `Updated settings: ${Object.keys(filtered).join(', ')}`
+        })
+
+        res.status(200).json({
+            result: {
+                safe_content: updatedSettings.safe_content ?? true,
+                reset_password: updatedSettings.reset_password ?? false,
+                email: user.email,
+                username: user.username,
+                role: user.role,
+                googleId: user.googleId || null,
+                verified: user.verification?.verified ?? false,
+            },
+            alert: { variant: 'success', message: 'Settings updated' }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.deleteAccount = async (req, res) => {
+    const { user } = req.token
+    const { password } = req.body
+
+    try {
+        if (user.password) {
+            if (!password) {
+                return res.status(400).json({
+                    alert: { variant: 'danger', message: 'Password is required to delete your account' }
+                })
+            }
+
+            const isMatch = await bcrypt.compare(password, user.password)
+            if (!isMatch) {
+                return res.status(400).json({
+                    alert: { variant: 'danger', message: 'Incorrect password' }
+                })
+            }
+        }
+
+        await Profile.findByIdAndDelete(user.profile_id?._id)
+        await Settings.findByIdAndDelete(user.settings_id?._id)
+        await ActivityLog.deleteMany({ user: user._id })
+        await Ban.deleteOne({ user: user._id })
+        await Users.findByIdAndDelete(user._id)
+
+        logActivity(req, {
+            action: 'delete_account',
+            category: 'account',
+            message: `Account "${user.username}" deleted`
+        })
+
+        res.status(200).json({
+            alert: { variant: 'success', message: 'Account deleted successfully' }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'internal server error' }
+        })
+    }
+}
+
+exports.sendVerificationEmail = async (req, res) => {
+    const { user } = req.token
+
+    try {
+        if (user.verification?.verified) {
+            return res.status(400).json({
+                alert: { variant: 'info', message: 'Your email is already verified' }
+            })
+        }
+
+        const lastSent = user.verification?.verification_time_to_send
+        if (lastSent) {
+            const cooldown = 60 * 1000
+            const elapsed = Date.now() - new Date(lastSent).getTime()
+            if (elapsed < cooldown) {
+                const remaining = Math.ceil((cooldown - elapsed) / 1000)
+                return res.status(429).json({
+                    alert: { variant: 'danger', message: `Please wait ${remaining}s before requesting another email` }
+                })
+            }
+        }
+
+        const token = crypto.randomBytes(32).toString('hex')
+
+        await Users.findByIdAndUpdate(user._id, {
+            'verification.verification_token': token,
+            'verification.verification_time_to_send': new Date().toISOString()
+        })
+
+        const isDev = process.env.DEVELOPMENT === 'true'
+        const baseUrl = isDev ? 'http://localhost:5173' : 'https://main-website-sage.vercel.app'
+        const verifyUrl = `${baseUrl}/account_verify?token=${token}`
+
+        const mailContent = {
+            from: process.env.GMAIL_EMAIL || process.env.EMAIL,
+            to: user.email,
+            subject: 'Verify your email address',
+            html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #f9fafb; border-radius: 12px;">
+                    <h2 style="color: #1e293b; margin: 0 0 8px 0; font-size: 20px;">Verify your email</h2>
+                    <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        Hi <strong>${user.username}</strong>, click the button below to verify your email address.
+                    </p>
+                    <a href="${verifyUrl}" style="display: inline-block; background: #2563eb; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                        Verify Email
+                    </a>
+                    <p style="color: #94a3b8; font-size: 12px; margin-top: 24px;">
+                        If you didn't request this, you can safely ignore this email.
+                    </p>
+                </div>
+            `
+        }
+
+        await sendMail(mailContent)
+
+        logActivity(req, {
+            action: 'send_verification_email',
+            category: 'account',
+            message: 'Verification email sent'
+        })
+
+        res.status(200).json({
+            alert: { variant: 'success', message: 'Verification email sent! Check your inbox.' }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: { variant: 'danger', message: 'Failed to send verification email' }
+        })
+    }
+}
+
+exports.getPublicProfile = async (req, res) => {
+    const { username } = req.params
+
+    if (!username) {
+        return res.status(400).json({ message: 'Username is required' })
+    }
+
+    try {
+        const Playlist = require('../models/playlist.model')
+
+        const user = await Users.findOne({ username })
+            .select('avatar username role subscribers verification createdAt')
+            .populate('profile_id', 'first_name last_name bio')
+            .lean()
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' })
+        }
+
+        const playlists = await Playlist.find({ user: user._id, privacy: false })
+            .populate('videos', 'title thumbnail views createdAt')
+            .sort({ createdAt: -1 })
+            .lean()
+
+        const ban = await Ban.findOne({ user: user._id }).lean()
+        let banInfo = null
+        if (ban) {
+            const isBanned = ban.permanent || (ban.expiresAt && new Date(ban.expiresAt) > new Date())
+            if (isBanned) {
+                banInfo = {
+                    permanent: ban.permanent,
+                    expiresAt: ban.expiresAt,
+                    reason: ban.reason,
+                }
+            }
+        }
+
+        res.status(200).json({
+            result: {
+                _id: user._id,
+                avatar: user.avatar,
+                username: user.username,
+                first_name: user.profile_id?.first_name,
+                last_name: user.profile_id?.last_name,
+                bio: user.profile_id?.bio,
+                role: user.role,
+                verified: user.verification?.verified ?? false,
+                subscribers: user.subscribers?.length || 0,
+                createdAt: user.createdAt,
+                ban: banInfo,
+                playlists: playlists.map(p => ({
+                    _id: p._id,
+                    name: p.name,
+                    description: p.description,
+                    videos: p.videos || [],
+                    createdAt: p.createdAt,
+                })),
+            }
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ message: 'Internal server error' })
+    }
+}
+
+exports.verifyEmail = async (req, res) => {
+    const { token } = req.body
+
+    if (!token) {
+        return res.status(400).json({ status: 'notFound' })
+    }
+
+    try {
+        const user = await Users.findOne({ 'verification.verification_token': token })
+
+        if (!user) {
+            return res.status(404).json({ status: 'notFound' })
+        }
+
+        if (user.verification?.verified) {
+            return res.status(200).json({ status: 'verified' })
+        }
+
+        const sentAt = user.verification?.verification_time_to_send
+        if (sentAt) {
+            const expiry = 24 * 60 * 60 * 1000
+            const elapsed = Date.now() - new Date(sentAt).getTime()
+            if (elapsed > expiry) {
+                return res.status(410).json({ status: 'expired' })
+            }
+        }
+
+        await Users.findByIdAndUpdate(user._id, {
+            'verification.verified': true,
+            'verification.verification_token': ''
+        })
+
+        res.status(200).json({ status: 'activated' })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ status: 'error' })
     }
 }
