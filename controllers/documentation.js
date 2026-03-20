@@ -594,3 +594,187 @@ exports.updateDocCategory = async (req, res) => {
         })
     }
 }
+
+exports.renameDocCategory = async (req, res) => {
+    const { category, categoryId, name } = req.body
+
+    if (!category || !categoryId || !name) {
+        return res.status(403).json({ alert: { variant: 'danger', message: 'invalid parameter' } });
+    }
+
+    try {
+        const doc = await Docs.findOne({ doc_name: category }).lean()
+        if (!doc) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'doc not found' } });
+        }
+
+        const newPath = toSnakeCase(name)
+        await DocsCategory.findByIdAndUpdate(categoryId, { name, path: newPath })
+
+        const subs = await DocsSubCategory.find({ category: categoryId })
+        for (const sub of subs) {
+            const oldSegments = sub.path.split('/')
+            if (sub.type === 'main') {
+                await DocsSubCategory.findByIdAndUpdate(sub._id, { name, path: newPath })
+            } else {
+                const subSegment = oldSegments.length > 1 ? oldSegments.slice(1).join('/') : oldSegments[0]
+                await DocsSubCategory.findByIdAndUpdate(sub._id, { path: `${newPath}/${subSegment}` })
+            }
+        }
+
+        const doc_category = await DocsCategory.find({ docs: doc._id }).lean()
+        const result = await Promise.all(
+            doc_category.map(async (item) => {
+                const sub = await DocsSubCategory.find({ category: item._id });
+                return { ...item, dropdown: sub, token: doc.token, base_url: doc.base_url };
+            })
+        );
+
+        return res.status(200).json({
+            result,
+            alert: { variant: 'success', message: 'category renamed' }
+        });
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}
+
+exports.deleteEntireDocCategory = async (req, res) => {
+    const { categoryId, category } = req.params
+
+    if (!category || !categoryId) {
+        return res.status(403).json({ alert: { variant: 'danger', message: 'invalid parameter' } });
+    }
+
+    try {
+        const doc = await Docs.findOne({ doc_name: category }).lean()
+        if (!doc) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'doc not found' } });
+        }
+
+        await DocsSubCategory.deleteMany({ category: categoryId })
+        await DocsCategory.findByIdAndDelete(categoryId)
+
+        const doc_category = await DocsCategory.find({ docs: doc._id }).lean()
+        const result = await Promise.all(
+            doc_category.map(async (item) => {
+                const sub = await DocsSubCategory.find({ category: item._id });
+                return { ...item, dropdown: sub, token: doc.token, base_url: doc.base_url };
+            })
+        );
+
+        return res.status(200).json({
+            result,
+            alert: { variant: 'success', message: 'category deleted' }
+        });
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}
+
+exports.renameDocSubCategory = async (req, res) => {
+    const { category, subCategoryId, name } = req.body
+
+    if (!category || !subCategoryId || !name) {
+        return res.status(403).json({ alert: { variant: 'danger', message: 'invalid parameter' } });
+    }
+
+    try {
+        const doc = await Docs.findOne({ doc_name: category }).lean()
+        if (!doc) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'doc not found' } });
+        }
+
+        const sub = await DocsSubCategory.findById(subCategoryId)
+        if (!sub) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'subcategory not found' } });
+        }
+
+        const parentCat = await DocsCategory.findById(sub.category).lean()
+        const parentPath = parentCat ? parentCat.path : ''
+        const newSubPath = sub.type === 'main' ? toSnakeCase(name) : `${parentPath}/${toSnakeCase(name)}`
+
+        await DocsSubCategory.findByIdAndUpdate(subCategoryId, { name, path: newSubPath })
+
+        const doc_category = await DocsCategory.find({ docs: doc._id }).lean()
+        const result = await Promise.all(
+            doc_category.map(async (item) => {
+                const subs = await DocsSubCategory.find({ category: item._id });
+                return { ...item, dropdown: subs, token: doc.token, base_url: doc.base_url };
+            })
+        );
+
+        return res.status(200).json({
+            result,
+            alert: { variant: 'success', message: 'subcategory renamed' }
+        });
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}
+
+exports.addDocSubCategory = async (req, res) => {
+    const { category, categoryId, name } = req.body
+
+    if (!category || !categoryId || !name) {
+        return res.status(403).json({ alert: { variant: 'danger', message: 'invalid parameter' } });
+    }
+
+    try {
+        const doc = await Docs.findOne({ doc_name: category }).lean()
+        if (!doc) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'doc not found' } });
+        }
+
+        const parentCat = await DocsCategory.findById(categoryId).lean()
+        if (!parentCat) {
+            return res.status(404).json({ alert: { variant: 'danger', message: 'category not found' } });
+        }
+
+        const subPath = `${parentCat.path}/${toSnakeCase(name)}`
+
+        const existing = await DocsSubCategory.findOne({ category: categoryId, path: subPath }).lean()
+        if (existing) {
+            return res.status(400).json({ alert: { variant: 'danger', message: 'subcategory already exists' } });
+        }
+
+        await new DocsSubCategory({
+            category: categoryId,
+            name,
+            path: subPath,
+            method: 'get',
+            description: '',
+            endpoint: '',
+            token_required: false,
+            payload: [],
+            type: 'sub',
+            auto_response: false,
+            response_result: '',
+            headers: [],
+            parameters: [],
+            status_codes: [],
+            content_type: 'application/json',
+            notes: '',
+            deprecated: false
+        }).save()
+
+        const doc_category = await DocsCategory.find({ docs: doc._id }).lean()
+        const result = await Promise.all(
+            doc_category.map(async (item) => {
+                const subs = await DocsSubCategory.find({ category: item._id });
+                return { ...item, dropdown: subs, token: doc.token, base_url: doc.base_url };
+            })
+        );
+
+        return res.status(200).json({
+            result,
+            alert: { variant: 'success', message: 'subcategory added' }
+        });
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } })
+    }
+}

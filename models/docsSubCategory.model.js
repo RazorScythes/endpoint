@@ -15,7 +15,13 @@ const docsSubCategorySchema = new Schema({
     payload: { type: Array },
     type: { type: String },
     auto_response: { type: Boolean },
-    response_result: { type: String }
+    response_result: { type: String },
+    headers: { type: Array, default: [] },
+    parameters: { type: Array, default: [] },
+    status_codes: { type: Array, default: [] },
+    content_type: { type: String, default: 'application/json' },
+    notes: { type: String, default: '' },
+    deprecated: { type: Boolean, default: false }
 },{
     timestamps: true,
     collection: "docsSubCategory"
