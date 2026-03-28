@@ -7,7 +7,7 @@ const Users              = require('../models/user.model')
 
 const populateReplies = (replies, users) => {
     return replies.map(reply => {
-        const user = users.find(u => u._id.toString() === reply.user_id.toString());
+        const user = reply.user_id ? users.find(u => u._id.toString() === reply.user_id.toString()) : null;
 
         const populatedReply = {
             ...reply,
@@ -27,7 +27,7 @@ const populateComments = (comments, users) => {
     return comments.map(comment => {
         const plainComment = comment.toObject();
     
-        const user = users.find(u => u._id.toString() === plainComment.user_id.toString());
+        const user = plainComment.user_id ? users.find(u => u._id.toString() === plainComment.user_id.toString()) : null;
 
         const populatedComment = {
             ...plainComment,

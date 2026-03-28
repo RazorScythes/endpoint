@@ -1,0 +1,43 @@
+const express                   = require('express')
+const router                    = express.Router()
+const game                      = require('../controllers/game')
+const gamePublic                = require('../controllers/gamePublic')
+
+const auth                      = require('../middleware/auth')
+
+/* Public endpoints (no auth required) */
+router.post('/getGames', auth.allowCors(gamePublic.getGames))
+router.post('/getGameByID', auth.allowCors(gamePublic.getGameByID))
+router.post('/getRelatedGames', auth.allowCors(gamePublic.getRelatedGames))
+router.post('/addRatings', auth.allowCors(gamePublic.addRatings))
+router.post('/addOneDownload', auth.allowCors(gamePublic.addOneDownload))
+router.post('/updateGameAccessKey', auth.allowCors(gamePublic.updateGameAccessKey))
+router.post('/countTags', auth.allowCors(gamePublic.countTags))
+router.post('/categoriesCount', auth.allowCors(gamePublic.categoriesCount))
+router.post('/getGameByTag', auth.allowCors(gamePublic.getGameByTag))
+router.post('/getGameByDeveloper', auth.allowCors(gamePublic.getGameByDeveloper))
+router.post('/getGameBySearchKey', auth.allowCors(gamePublic.getGameBySearchKey))
+router.post('/getRecentGameBlog', auth.allowCors(gamePublic.getRecentGameBlog))
+router.post('/addRecentGamingBlogLikes', auth.allowCors(gamePublic.addRecentGamingBlogLikes))
+router.post('/getGameComments', auth.allowCors(gamePublic.getGameComments))
+router.post('/uploadGameComment', auth.allowCors(gamePublic.uploadGameComment))
+router.patch('/updateGameComment', auth.allowCors(gamePublic.updateGameComment))
+router.delete('/removeGameComment/:id/:game_id', auth.allowCors(gamePublic.removeGameComment))
+router.post('/toggleFavorite', auth.allowCors(gamePublic.toggleFavoriteGame))
+router.post('/getFavorites', auth.allowCors(gamePublic.getFavoriteGames))
+
+/* Authenticated CRUD endpoints (GameManager) */
+router.get('/', auth.authenticateToken, auth.userRequired, auth.allowCors(game.getGames))
+router.post('/', auth.authenticateToken, auth.userRequired, auth.allowCors(game.createGame))
+router.post('/bulkDelete', auth.authenticateToken, auth.userRequired, auth.allowCors(game.bulkDeleteGames))
+router.get('/trash/list', auth.authenticateToken, auth.userRequired, auth.allowCors(game.getTrash))
+router.patch('/trash/restore/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(game.restoreGame))
+router.delete('/trash/permanent/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(game.permanentDeleteGame))
+router.delete('/trash/empty', auth.authenticateToken, auth.userRequired, auth.allowCors(game.emptyTrash))
+router.get('/:id', auth.authenticateToken, auth.allowCors(game.getGameById))
+router.patch('/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(game.updateGame))
+router.delete('/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(game.deleteGame))
+router.patch('/:id/privacy', auth.authenticateToken, auth.userRequired, auth.allowCors(game.togglePrivacy))
+router.patch('/:id/strict', auth.authenticateToken, auth.userRequired, auth.allowCors(game.toggleStrict))
+
+module.exports = router

@@ -31,6 +31,7 @@ require('./models/expense.model')
 require('./models/savings.model')
 require('./models/savingsHistory.model')
 require('./models/portfolio.model')
+require('./models/game.model')
 
 /* API */
 const user                      = require('./routes/user')
@@ -47,6 +48,7 @@ const playlist                  = require('./routes/playlist')
 const chat                      = require('./routes/chat')
 const budget                    = require('./routes/budget')
 const portfolio                 = require('./routes/portfolio')
+const gameRoutes                = require('./routes/game')
 
 const app    = express()
 const server = http.createServer(app)
@@ -66,6 +68,14 @@ io.on('connection', (socket) => {
 
     socket.on('leave_video', (videoId) => {
         socket.leave(`video:${videoId}`)
+    })
+
+    socket.on('join_game', (gameId) => {
+        socket.join(`game:${gameId}`)
+    })
+
+    socket.on('leave_game', (gameId) => {
+        socket.leave(`game:${gameId}`)
     })
 
     socket.on('join_chat', (userId) => {
@@ -149,3 +159,4 @@ app.use('/playlist', playlist);
 app.use('/chat', chat);
 app.use('/budget', budget);
 app.use('/portfolio', portfolio);
+app.use('/game', gameRoutes);

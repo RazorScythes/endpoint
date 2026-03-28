@@ -18,6 +18,10 @@ router.post('/uploadContacts', auth.authenticateToken, auth.userRequired, auth.a
 router.post('/testEmail', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.testEmail))
 router.post('/sendEmail', auth.allowCors(portfolio.sendEmail))
 router.post('/sendContactUs', auth.allowCors(portfolio.sendContactUs))
+router.post('/education', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.uploadEducation))
+router.post('/languages', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.uploadLanguages))
+router.post('/certifications', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.uploadCertifications))
+router.post('/updateLayout', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.updateLayout))
 router.post('/publishPortfolio', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.publishPortfolio))
 router.post('/unpublishPortfolio', auth.authenticateToken, auth.userRequired, auth.allowCors(portfolio.unpublishPortfolio))
 

@@ -208,11 +208,11 @@ exports.deleteProject = async (req, res) => {
 exports.uploadContacts = async (req, res) => {
     try {
         const id = req.token.id
-        const { email, subject } = req.body
+        const { email, subject, phone, location } = req.body
 
         const updated = await Portfolio.findOneAndUpdate(
             { user: id },
-            { $set: { 'contact.email': email, 'contact.subject': subject } },
+            { $set: { 'contact.email': email, 'contact.subject': subject, 'contact.phone': phone || '', 'contact.location': location || '' } },
             { new: true, upsert: true }
         )
 
@@ -248,6 +248,77 @@ exports.sendContactUs = async (req, res) => {
     } catch (err) {
         console.log(err)
         return res.status(500).json({ mailStatus: 'failed' })
+    }
+}
+
+exports.updateLayout = async (req, res) => {
+    try {
+        const id = req.token.id
+        const { layout } = req.body
+
+        const validLayouts = ['default', 'classic', 'minimal']
+        if (!validLayouts.includes(layout)) {
+            return res.status(400).json({ message: 'Invalid layout', variant: 'danger' })
+        }
+
+        const updated = await Portfolio.findOneAndUpdate(
+            { user: id },
+            { $set: { layout } },
+            { new: true, upsert: true }
+        )
+
+        return res.status(200).json({ result: updated, alert: 'Layout updated successfully', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.uploadEducation = async (req, res) => {
+    try {
+        const id = req.token.id
+        const { education } = req.body
+        const updated = await Portfolio.findOneAndUpdate(
+            { user: id },
+            { $set: { education } },
+            { new: true, upsert: true }
+        )
+        return res.status(200).json({ result: updated, alert: 'Education updated successfully', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.uploadLanguages = async (req, res) => {
+    try {
+        const id = req.token.id
+        const { languages } = req.body
+        const updated = await Portfolio.findOneAndUpdate(
+            { user: id },
+            { $set: { languages } },
+            { new: true, upsert: true }
+        )
+        return res.status(200).json({ result: updated, alert: 'Languages updated successfully', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.uploadCertifications = async (req, res) => {
+    try {
+        const id = req.token.id
+        const { certifications } = req.body
+        const updated = await Portfolio.findOneAndUpdate(
+            { user: id },
+            { $set: { certifications } },
+            { new: true, upsert: true }
+        )
+        return res.status(200).json({ result: updated, alert: 'Certifications updated successfully', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
     }
 }
 

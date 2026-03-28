@@ -4,6 +4,7 @@ const Schema = mongoose.Schema
 const schema = Schema({
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     published: { type: Boolean, default: false },
+    layout: { type: String, default: 'default' },
     hero: {
         image: { type: String, default: '' },
         full_name: { type: String, default: '' },
@@ -48,7 +49,8 @@ const schema = Schema({
         position: { type: String },
         company_location: { type: String },
         remote_work: { type: Boolean, default: false },
-        link: { type: String, default: '' }
+        link: { type: String, default: '' },
+        description: { type: String, default: '' }
     }],
     projects: [{
         image: { type: String, default: '' },
@@ -69,8 +71,27 @@ const schema = Schema({
     }],
     contact: {
         email: { type: String, default: '' },
-        subject: [{ type: String }]
-    }
+        subject: [{ type: String }],
+        phone: { type: String, default: '' },
+        location: { type: String, default: '' }
+    },
+    education: [{
+        degree: { type: String },
+        institution: { type: String },
+        address: { type: String, default: '' },
+        year_start: { type: String },
+        year_end: { type: String },
+        description: { type: String, default: '' }
+    }],
+    languages: [{
+        language: { type: String },
+        proficiency: { type: String }
+    }],
+    certifications: [{
+        name: { type: String },
+        issuer: { type: String },
+        year: { type: String }
+    }]
 }, { timestamps: true })
 
 const model = mongoose.model('Portfolio', schema)

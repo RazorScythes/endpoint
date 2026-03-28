@@ -17,6 +17,7 @@ const schema = Schema({
     },
     googleId: { type: String },
     subscribers: [{ type: String }],
+    favorite_games: [{ type: Schema.Types.ObjectId, ref: 'Game' }],
     verification: {
         verified: { type: Boolean },
         verification_token: { type: String },
