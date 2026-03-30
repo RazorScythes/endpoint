@@ -2,6 +2,7 @@ const BudgetCategory = require('../models/budgetCategory.model')
 const Expense = require('../models/expense.model')
 const Savings = require('../models/savings.model')
 const SavingsHistory = require('../models/savingsHistory.model')
+const Debt = require('../models/debt.model')
 
 // ==================== CATEGORIES ====================
 
@@ -436,6 +437,144 @@ exports.deleteSavingsHistory = async (req, res) => {
         await SavingsHistory.deleteOne({ _id: id, user: userId })
         const history = await SavingsHistory.find({ user: userId }).sort({ createdAt: -1 }).limit(50).lean()
         return res.status(200).json({ result: history, alert: { variant: 'success', message: 'History entry deleted' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+// ==================== DEBTS ====================
+
+exports.getDebts = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: debts })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.createDebt = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { name, type, person, total_amount, due_date, notes } = req.body
+
+        if (!name || !total_amount) return res.status(400).json({ alert: { variant: 'danger', message: 'Name and amount are required' } })
+
+        await new Debt({ user: userId, name, type, person, total_amount, due_date: due_date || null, notes }).save()
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Debt created' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.updateDebt = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id, name, type, person, total_amount, due_date, notes } = req.body
+
+        await Debt.findOneAndUpdate({ _id: id, user: userId }, { name, type, person, total_amount, due_date: due_date || null, notes })
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Debt updated' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.deleteDebt = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+
+        await Debt.findOneAndDelete({ _id: id, user: userId })
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Debt deleted' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.addDebtPayment = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+        const { amount, notes, category, paymentMethod } = req.body
+
+        if (!amount || amount <= 0) return res.status(400).json({ alert: { variant: 'danger', message: 'Valid amount is required' } })
+
+        const debt = await Debt.findOne({ _id: id, user: userId })
+        if (!debt) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
+
+        const paymentDate = new Date()
+        debt.payments.push({ amount, notes: notes || '', date: paymentDate })
+        debt.amount_paid = debt.payments.reduce((s, p) => s + p.amount, 0)
+        if (debt.amount_paid >= debt.total_amount) debt.status = 'paid'
+        await debt.save()
+
+        const expenseType = debt.type === 'owe' ? 'expense' : 'income'
+        const personLabel = debt.person ? ` → ${debt.person}` : ''
+        await new Expense({
+            user: userId,
+            date: paymentDate,
+            description: `Debt: ${debt.name}${personLabel}`,
+            category: category || null,
+            amount: parseFloat(amount),
+            type: expenseType,
+            paymentMethod: paymentMethod || 'Cash',
+            notes: notes || ''
+        }).save()
+
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Payment recorded' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.removeDebtPayment = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id, paymentId } = req.params
+
+        const debt = await Debt.findOne({ _id: id, user: userId })
+        if (!debt) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
+
+        debt.payments = debt.payments.filter(p => p._id.toString() !== paymentId)
+        debt.amount_paid = debt.payments.reduce((s, p) => s + p.amount, 0)
+        debt.status = debt.amount_paid >= debt.total_amount ? 'paid' : 'active'
+        await debt.save()
+
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Payment removed' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.toggleDebtStatus = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+
+        const debt = await Debt.findOne({ _id: id, user: userId })
+        if (!debt) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
+
+        debt.status = debt.status === 'paid' ? 'active' : 'paid'
+        await debt.save()
+
+        const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: `Debt marked as ${debt.status}` } })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })

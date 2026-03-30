@@ -30,4 +30,13 @@ router.post('/savings', auth.authenticateToken, auth.userRequired, auth.allowCor
 router.get('/savings/history', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getSavingsHistory))
 router.delete('/savings/history/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteSavingsHistory))
 
+// DEBTS
+router.get('/debts', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getDebts))
+router.post('/debt', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createDebt))
+router.patch('/debt', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.updateDebt))
+router.delete('/debt/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteDebt))
+router.post('/debt/:id/payment', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.addDebtPayment))
+router.delete('/debt/:id/payment/:paymentId', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.removeDebtPayment))
+router.patch('/debt/:id/toggle', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.toggleDebtStatus))
+
 module.exports = router

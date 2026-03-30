@@ -30,6 +30,7 @@ require('./models/budgetCategory.model')
 require('./models/expense.model')
 require('./models/savings.model')
 require('./models/savingsHistory.model')
+require('./models/debt.model')
 require('./models/portfolio.model')
 require('./models/game.model')
 
