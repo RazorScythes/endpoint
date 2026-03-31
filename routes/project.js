@@ -1,0 +1,26 @@
+const express = require('express')
+const router = express.Router()
+const project = require('../controllers/project')
+const auth = require('../middleware/auth')
+
+router.post('/getUserProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.getUserProject))
+router.post('/getAdminCategory', auth.authenticateToken, auth.userRequired, auth.allowCors(project.getAdminCategory))
+router.post('/addCategory', auth.authenticateToken, auth.userRequired, auth.allowCors(project.addCategory))
+router.post('/editCategory', auth.authenticateToken, auth.userRequired, auth.allowCors(project.editCategory))
+router.post('/removeCategory', auth.authenticateToken, auth.userRequired, auth.allowCors(project.removeCategory))
+router.post('/uploadProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.uploadProject))
+router.post('/editUserProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.editUserProject))
+router.post('/removeUserProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.removeUserProject))
+
+router.post('/getProjectByID', auth.allowCors(project.getProjectByID))
+router.post('/getCategory', auth.allowCors(project.getCategory))
+router.post('/getProjects', auth.allowCors(project.getProjects))
+router.post('/getProjectsByCategories', auth.allowCors(project.getProjectsByCategories))
+router.post('/getProjectsBySearchKey', auth.allowCors(project.getProjectsBySearchKey))
+router.post('/projectCountTags', auth.allowCors(project.projectCountTags))
+router.post('/getProjectComments', auth.allowCors(project.getProjectComments))
+router.post('/uploadProjectComment', auth.allowCors(project.uploadProjectComment))
+router.post('/removeProjectComment', auth.allowCors(project.removeProjectComment))
+router.post('/getLatestProjects', auth.allowCors(project.getLatestProjects))
+
+module.exports = router
