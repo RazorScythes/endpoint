@@ -20,7 +20,10 @@ router.post('/getProjectsBySearchKey', auth.allowCors(project.getProjectsBySearc
 router.post('/projectCountTags', auth.allowCors(project.projectCountTags))
 router.post('/getProjectComments', auth.allowCors(project.getProjectComments))
 router.post('/uploadProjectComment', auth.allowCors(project.uploadProjectComment))
-router.post('/removeProjectComment', auth.allowCors(project.removeProjectComment))
+router.patch('/updateProjectComment', auth.allowCors(project.updateProjectComment))
+router.delete('/removeProjectComment/:id/:project_id', auth.allowCors(project.removeProjectComment))
+router.post('/toggleProjectLike', auth.allowCors(project.toggleProjectLike))
 router.post('/getLatestProjects', auth.allowCors(project.getLatestProjects))
+router.post('/viewProject', auth.allowCors(project.viewProject))
 
 module.exports = router

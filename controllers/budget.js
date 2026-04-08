@@ -3,6 +3,7 @@ const Expense = require('../models/expense.model')
 const Savings = require('../models/savings.model')
 const SavingsHistory = require('../models/savingsHistory.model')
 const Debt = require('../models/debt.model')
+const BudgetList = require('../models/budgetList.model')
 
 // ==================== CATEGORIES ====================
 
@@ -578,5 +579,64 @@ exports.toggleDebtStatus = async (req, res) => {
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+// ==================== BUDGET LISTS ====================
+
+exports.getBudgetLists = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: lists })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to load lists' } })
+    }
+}
+
+exports.createBudgetList = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { name, description, color, icon, currency, showCurrency, items } = req.body
+        if (!name) return res.status(400).json({ alert: { variant: 'danger', message: 'List name is required' } })
+
+        await new BudgetList({ user: userId, name, description: description || '', color: color || '#3b82f6', icon: icon || 'peso-sign', currency: currency || '₱', showCurrency: showCurrency !== false, items: items || [] }).save()
+        const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: lists, alert: { variant: 'success', message: 'List created' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to create list' } })
+    }
+}
+
+exports.updateBudgetList = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id, name, description, color, icon, currency, showCurrency, items } = req.body
+        if (!id) return res.status(400).json({ alert: { variant: 'danger', message: 'List ID is required' } })
+
+        await BudgetList.findOneAndUpdate(
+            { _id: id, user: userId },
+            { $set: { name, description, color, icon, currency, showCurrency, items } }
+        )
+        const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: lists, alert: { variant: 'success', message: 'List updated' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to update list' } })
+    }
+}
+
+exports.deleteBudgetList = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+        await BudgetList.findOneAndDelete({ _id: id, user: userId })
+        const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: lists, alert: { variant: 'success', message: 'List deleted' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to delete list' } })
     }
 }

@@ -1,6 +1,8 @@
 const Project = require('../models/project.model')
 const Category = require('../models/category.model')
 const User = require('../models/user.model')
+const Comment = require('../models/comment.model')
+const db = require('../plugins/database')
 
 exports.getUserProject = async (req, res) => {
     try {
@@ -25,13 +27,13 @@ exports.getAdminCategory = async (req, res) => {
 
 exports.addCategory = async (req, res) => {
     try {
-        const { id, name, image } = req.body
+        const { id, name, image, description } = req.body
         if (!name) return res.status(400).json({ message: 'Category name is required', variant: 'danger' })
 
         const exists = await Category.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') }, type: 'project' })
         if (exists) return res.status(400).json({ message: 'Category already exists', variant: 'danger' })
 
-        await new Category({ name, image: image || '', type: 'project', user: id }).save()
+        await new Category({ name, image: image || '', description: description || '', type: 'project', user: id }).save()
         const categories = await Category.find({ type: 'project' }).sort({ createdAt: -1 }).lean()
 
         return res.status(200).json({ result: categories, message: 'Category added successfully', variant: 'success' })
@@ -43,13 +45,13 @@ exports.addCategory = async (req, res) => {
 
 exports.editCategory = async (req, res) => {
     try {
-        const { category_id, name, image } = req.body
+        const { category_id, name, image, description } = req.body
         if (!category_id || !name) return res.status(400).json({ message: 'Category ID and name are required', variant: 'danger' })
 
         const duplicate = await Category.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') }, type: 'project', _id: { $ne: category_id } })
         if (duplicate) return res.status(400).json({ message: 'Category name already exists', variant: 'danger' })
 
-        await Category.findByIdAndUpdate(category_id, { $set: { name, image: image || '' } })
+        await Category.findByIdAndUpdate(category_id, { $set: { name, image: image || '', description: description || '' } })
         const categories = await Category.find({ type: 'project' }).sort({ createdAt: -1 }).lean()
 
         return res.status(200).json({ result: categories, message: 'Category updated successfully', variant: 'success' })
@@ -104,6 +106,9 @@ exports.editUserProject = async (req, res) => {
                 date_end: data.date_end,
                 created_for: data.created_for,
                 categories: data.categories,
+                privacy: data.privacy || false,
+                access_key: data.access_key || [],
+                documentation_link: data.documentation_link || '',
                 tags: data.tags,
                 content: data.content
             }}
@@ -132,13 +137,45 @@ exports.removeUserProject = async (req, res) => {
 
 exports.getProjectByID = async (req, res) => {
     try {
-        const { id } = req.body
+        const { id, access_key, userId } = req.body
         const project = await Project.findById(id)
             .populate({ path: 'user', select: 'username avatar' })
             .lean()
         if (!project) return res.status(404).json({ message: 'Project not found', variant: 'danger', notFound: true })
 
+        if (project.privacy) {
+            const isOwner = userId && String(project.user._id || project.user) === String(userId)
+            if (!isOwner) {
+                if (!access_key) {
+                    return res.status(200).json({ message: 'This project is private', variant: 'danger', forbiden: 'private' })
+                }
+                const validKey = project.access_key?.find(k => k.key === access_key)
+                if (!validKey) {
+                    return res.status(200).json({ message: 'Invalid access key', variant: 'danger', forbiden: 'invalid_key' })
+                }
+            }
+        }
+
         return res.status(200).json({ result: project })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.viewProject = async (req, res) => {
+    try {
+        const { projectId, uid } = req.body
+        if (!projectId || !uid) return res.status(400).json({ message: 'Missing required fields', variant: 'danger' })
+
+        const project = await Project.findByIdAndUpdate(
+            projectId,
+            { $addToSet: { views: uid } },
+            { new: true }
+        )
+        if (!project) return res.status(404).json({ message: 'Project not found', variant: 'danger' })
+
+        return res.status(200).json({ result: { views: project.views } })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ message: 'Server error', variant: 'danger' })
@@ -149,7 +186,20 @@ exports.getCategory = async (req, res) => {
     try {
         const { type } = req.body
         const categories = await Category.find({ type: type || 'project' }).lean()
-        return res.status(200).json({ result: categories })
+
+        const counts = await Project.aggregate([
+            { $match: { categories: { $ne: '' }, privacy: { $ne: true } } },
+            { $group: { _id: '$categories', count: { $sum: 1 } } }
+        ])
+        const countMap = {}
+        counts.forEach(c => { countMap[c._id] = c.count })
+
+        const result = categories.map(cat => ({
+            ...cat,
+            count: countMap[String(cat._id)] || 0
+        }))
+
+        return res.status(200).json({ result })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ message: 'Server error', variant: 'danger' })
@@ -159,7 +209,7 @@ exports.getCategory = async (req, res) => {
 exports.getProjects = async (req, res) => {
     try {
         const { id } = req.body
-        const query = id ? { user: id } : {}
+        const query = id ? { user: id } : { privacy: { $ne: true } }
         const projects = await Project.find(query)
             .populate({ path: 'user', select: 'username avatar' })
             .sort({ createdAt: -1 })
@@ -174,7 +224,7 @@ exports.getProjects = async (req, res) => {
 exports.getProjectsByCategories = async (req, res) => {
     try {
         const { category } = req.body
-        const projects = await Project.find({ categories: category })
+        const projects = await Project.find({ categories: category, privacy: { $ne: true } })
             .populate({ path: 'user', select: 'username avatar' })
             .sort({ createdAt: -1 })
             .lean()
@@ -200,6 +250,7 @@ exports.getProjectsBySearchKey = async (req, res) => {
 
         const regex = new RegExp(key, 'i')
         const projects = await Project.find({
+            privacy: { $ne: true },
             $or: [
                 { post_title: regex },
                 { tags: regex },
@@ -240,14 +291,9 @@ exports.projectCountTags = async (req, res) => {
 
 exports.getProjectComments = async (req, res) => {
     try {
-        const { id } = req.body
-        const project = await Project.findById(id)
-            .populate({ path: 'comment.user_id', select: 'username avatar' })
-            .populate({ path: 'comment.replies.user_id', select: 'username avatar' })
-            .lean()
-        if (!project) return res.status(404).json({ message: 'Project not found', variant: 'danger' })
-
-        return res.status(200).json({ comments: project.comment || [] })
+        const { projectId } = req.body
+        const comments = await db.getComments(projectId)
+        return res.status(200).json({ result: comments })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ message: 'Server error', variant: 'danger' })
@@ -255,39 +301,90 @@ exports.getProjectComments = async (req, res) => {
 }
 
 exports.uploadProjectComment = async (req, res) => {
+    const existing = await Project.findById(req.body.parent_id)
+    if (!existing) {
+        return res.status(200).json({ alert: { variant: 'danger', message: 'Project not found' } })
+    }
+
     try {
-        const { id, user_id, text } = req.body
-        if (!text) return res.status(400).json({ message: 'Comment text required', variant: 'danger' })
+        const newComment = new Comment(req.body)
+        await newComment.save()
 
-        await Project.findByIdAndUpdate(id, {
-            $push: { comment: { user_id, text, date: new Date() } }
+        const comments = await db.getComments(req.body.parent_id)
+
+        const io = req.app.get('io')
+        io.to(`project:${req.body.parent_id}`).emit('project_comments_updated', { projectId: req.body.parent_id, comments })
+
+        res.status(200).json({
+            result: comments,
+            alert: { variant: 'success', message: 'Commented!' }
         })
-
-        const project = await Project.findById(id)
-            .populate({ path: 'comment.user_id', select: 'username avatar' })
-            .populate({ path: 'comment.replies.user_id', select: 'username avatar' })
-            .lean()
-
-        return res.status(200).json({ comments: project.comment || [] })
     } catch (err) {
         console.log(err)
-        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.updateProjectComment = async (req, res) => {
+    const { id, data } = req.body
+
+    try {
+        await Comment.findByIdAndUpdate(data._id, data, { new: true })
+
+        const comments = await db.getComments(id)
+
+        const io = req.app.get('io')
+        io.to(`project:${id}`).emit('project_comments_updated', { projectId: id, comments })
+
+        return res.status(200).json({ result: comments })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
     }
 }
 
 exports.removeProjectComment = async (req, res) => {
+    const { id, project_id } = req.params
+
     try {
-        const { id, comment_id } = req.body
-        await Project.findByIdAndUpdate(id, {
-            $pull: { comment: { _id: comment_id } }
+        if (!id) {
+            return res.status(403).json({ alert: { variant: 'danger', message: 'Invalid parameter' } })
+        }
+
+        await Comment.findByIdAndDelete(id)
+
+        const comments = await db.getComments(project_id)
+
+        const io = req.app.get('io')
+        io.to(`project:${project_id}`).emit('project_comments_updated', { projectId: project_id, comments })
+
+        return res.status(200).json({
+            result: comments,
+            alert: { variant: 'warning', message: 'Deleted comment' }
         })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
 
-        const project = await Project.findById(id)
-            .populate({ path: 'comment.user_id', select: 'username avatar' })
-            .populate({ path: 'comment.replies.user_id', select: 'username avatar' })
-            .lean()
+exports.toggleProjectLike = async (req, res) => {
+    try {
+        const { projectId, userId } = req.body
+        if (!projectId || !userId) return res.status(400).json({ message: 'Missing data', variant: 'danger' })
 
-        return res.status(200).json({ comments: project?.comment || [] })
+        const project = await Project.findById(projectId)
+        if (!project) return res.status(404).json({ message: 'Project not found', variant: 'danger' })
+
+        const idx = project.likes.indexOf(userId)
+        if (idx === -1) {
+            project.likes.push(userId)
+        } else {
+            project.likes.splice(idx, 1)
+        }
+        await project.save()
+
+        return res.status(200).json({ result: project.likes })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ message: 'Server error', variant: 'danger' })
@@ -296,7 +393,7 @@ exports.removeProjectComment = async (req, res) => {
 
 exports.getLatestProjects = async (req, res) => {
     try {
-        const projects = await Project.find()
+        const projects = await Project.find({ privacy: { $ne: true } })
             .populate({ path: 'user', select: 'username avatar' })
             .sort({ createdAt: -1 })
             .limit(10)

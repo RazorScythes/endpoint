@@ -31,6 +31,7 @@ require('./models/expense.model')
 require('./models/savings.model')
 require('./models/savingsHistory.model')
 require('./models/debt.model')
+require('./models/budgetList.model')
 require('./models/portfolio.model')
 require('./models/game.model')
 require('./models/project.model')
@@ -79,6 +80,14 @@ io.on('connection', (socket) => {
 
     socket.on('leave_game', (gameId) => {
         socket.leave(`game:${gameId}`)
+    })
+
+    socket.on('join_project', (projectId) => {
+        socket.join(`project:${projectId}`)
+    })
+
+    socket.on('leave_project', (projectId) => {
+        socket.leave(`project:${projectId}`)
     })
 
     socket.on('join_chat', (userId) => {

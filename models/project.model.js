@@ -13,6 +13,13 @@ const projectSchema = new Schema({
     date_end: { type: String, default: '' },
     created_for: { type: String, default: 'Personal' },
     categories: { type: String, default: '' },
+    privacy: { type: Boolean, default: false },
+    access_key: [{
+        key: { type: String },
+        download_limit: { type: Number, default: 0 },
+        user_downloaded: [{ type: Schema.Types.Mixed }]
+    }],
+    documentation_link: { type: String, default: '' },
     tags: [{ type: String }],
     content: [{ type: Schema.Types.Mixed }],
     views: [{ type: String }],

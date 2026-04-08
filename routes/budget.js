@@ -39,4 +39,10 @@ router.post('/debt/:id/payment', auth.authenticateToken, auth.userRequired, auth
 router.delete('/debt/:id/payment/:paymentId', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.removeDebtPayment))
 router.patch('/debt/:id/toggle', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.toggleDebtStatus))
 
+// BUDGET LISTS
+router.get('/lists', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getBudgetLists))
+router.post('/list', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createBudgetList))
+router.patch('/list', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.updateBudgetList))
+router.delete('/list/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteBudgetList))
+
 module.exports = router
