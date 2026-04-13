@@ -20,6 +20,7 @@ exports.authenticateToken = async (req, res, next) => {
 
         next();
     } catch (error) {
+        console.log('JWT verify failed:', error.message, '| token preview:', token?.substring(0, 20) + '...')
         return res.status(403).json({
             alert : { message: 'Session Expired', variant: 'danger', type: 0 }
         });
@@ -94,7 +95,7 @@ exports.allowCors = (fn) => async (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT')
     res.setHeader(
         'Access-Control-Allow-Headers',
-        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+        'Authorization, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
     )
 
     if (req.method === 'OPTIONS') {

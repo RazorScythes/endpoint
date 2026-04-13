@@ -1,0 +1,22 @@
+const express = require('express')
+const router = express.Router()
+const page = require('../controllers/page')
+const auth = require('../middleware/auth')
+
+router.get('/pages', auth.authenticateToken, auth.userRequired, auth.allowCors(page.getPages))
+router.get('/trash', auth.authenticateToken, auth.userRequired, auth.allowCors(page.getTrash))
+router.get('/images/all', auth.authenticateToken, auth.userRequired, auth.allowCors(page.getImages))
+router.get('/edit/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(page.getPageForEdit))
+router.get('/:slug', auth.allowCors(page.getPageBySlug))
+router.post('/', auth.authenticateToken, auth.userRequired, auth.allowCors(page.createPage))
+router.post('/duplicate', auth.authenticateToken, auth.userRequired, auth.allowCors(page.duplicatePage))
+router.post('/images', auth.authenticateToken, auth.userRequired, auth.allowCors(page.uploadImages))
+router.patch('/', auth.authenticateToken, auth.userRequired, auth.allowCors(page.updatePage))
+router.patch('/privacy/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(page.togglePrivacy))
+router.patch('/restore/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(page.restorePage))
+router.delete('/images/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(page.deleteImage))
+router.delete('/permanent/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(page.permanentDelete))
+router.delete('/empty-trash', auth.authenticateToken, auth.userRequired, auth.allowCors(page.emptyTrash))
+router.delete('/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(page.deletePage))
+
+module.exports = router

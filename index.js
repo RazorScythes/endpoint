@@ -35,6 +35,8 @@ require('./models/budgetList.model')
 require('./models/portfolio.model')
 require('./models/game.model')
 require('./models/project.model')
+require('./models/page.model')
+require('./models/userImage.model')
 
 /* API */
 const user                      = require('./routes/user')
@@ -53,6 +55,7 @@ const budget                    = require('./routes/budget')
 const portfolio                 = require('./routes/portfolio')
 const gameRoutes                = require('./routes/game')
 const projectRoutes             = require('./routes/project')
+const pageRoutes                = require('./routes/page')
 
 const app    = express()
 const server = http.createServer(app)
@@ -173,3 +176,4 @@ app.use('/budget', budget);
 app.use('/portfolio', portfolio);
 app.use('/game', gameRoutes);
 app.use('/project', projectRoutes);
+app.use('/page', pageRoutes);
