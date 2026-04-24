@@ -4,13 +4,32 @@ const Savings = require('../models/savings.model')
 const SavingsHistory = require('../models/savingsHistory.model')
 const Debt = require('../models/debt.model')
 const BudgetList = require('../models/budgetList.model')
+const FinancialGoal = require('../models/financialGoal.model')
+
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function dateFilter(month, year) {
+    if (!month || !year) return {}
+    const start = new Date(year, month - 1, 1)
+    const end = new Date(year, month, 0, 23, 59, 59, 999)
+    return { $gte: start, $lte: end }
+}
+
+async function fetchExpenses(userId, month, year) {
+    const filter = { user: userId }
+    const df = dateFilter(month, year)
+    if (df.$gte) filter.date = df
+    return Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
+}
 
 // ==================== CATEGORIES ====================
 
 exports.getCategories = async (req, res) => {
     try {
         const userId = req.token.id
-        const categories = await BudgetCategory.find({ user: userId }).sort({ name: 1 }).lean()
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).sort({ name: 1 }).lean()
         return res.status(200).json({ result: categories })
     } catch (err) {
         console.log(err)
@@ -21,15 +40,15 @@ exports.getCategories = async (req, res) => {
 exports.createCategory = async (req, res) => {
     try {
         const userId = req.token.id
-        const { name, icon, color, type, budget } = req.body
+        const { name, icon, color, type, budget, rollover } = req.body
 
         if (!name) return res.status(400).json({ alert: { variant: 'danger', message: 'Category name is required' } })
 
-        const exists = await BudgetCategory.findOne({ user: userId, name: { $regex: new RegExp(`^${name}$`, 'i') } })
+        const exists = await BudgetCategory.findOne({ user: userId, name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') } })
         if (exists) return res.status(400).json({ alert: { variant: 'danger', message: 'Category already exists' } })
 
-        const category = await new BudgetCategory({ user: userId, name, icon, color, type, budget: budget || 0 }).save()
-        const categories = await BudgetCategory.find({ user: userId }).sort({ name: 1 }).lean()
+        await new BudgetCategory({ user: userId, name, icon: icon || '', color, type, budget: budget || 0, rollover: !!rollover }).save()
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).sort({ name: 1 }).lean()
 
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category created' } })
     } catch (err) {
@@ -41,10 +60,10 @@ exports.createCategory = async (req, res) => {
 exports.updateCategory = async (req, res) => {
     try {
         const userId = req.token.id
-        const { id, name, icon, color, type, budget } = req.body
+        const { id, name, icon, color, type, budget, rollover } = req.body
 
-        await BudgetCategory.findOneAndUpdate({ _id: id, user: userId }, { name, icon, color, type, budget })
-        const categories = await BudgetCategory.find({ user: userId }).sort({ name: 1 }).lean()
+        await BudgetCategory.findOneAndUpdate({ _id: id, user: userId }, { name, icon, color, type, budget, rollover: !!rollover })
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).sort({ name: 1 }).lean()
 
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category updated' } })
     } catch (err) {
@@ -60,9 +79,46 @@ exports.deleteCategory = async (req, res) => {
 
         await Expense.updateMany({ user: userId, category: id }, { $unset: { category: '' } })
         await BudgetCategory.findOneAndDelete({ _id: id, user: userId })
-        const categories = await BudgetCategory.find({ user: userId }).sort({ name: 1 }).lean()
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).sort({ name: 1 }).lean()
 
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category deleted' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.shareCategory = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id, targetUserId } = req.body
+
+        if (!id || !targetUserId) return res.status(400).json({ alert: { variant: 'danger', message: 'Category ID and target user ID are required' } })
+
+        const cat = await BudgetCategory.findOne({ _id: id, user: userId })
+        if (!cat) return res.status(404).json({ alert: { variant: 'danger', message: 'Category not found' } })
+
+        if (!cat.sharedWith.includes(targetUserId)) {
+            cat.sharedWith.push(targetUserId)
+            await cat.save()
+        }
+
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).sort({ name: 1 }).lean()
+        return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category shared' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.unshareCategory = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id, targetUserId } = req.body
+
+        await BudgetCategory.findOneAndUpdate({ _id: id, user: userId }, { $pull: { sharedWith: targetUserId } })
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).sort({ name: 1 }).lean()
+        return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'User removed from shared category' } })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
@@ -75,15 +131,7 @@ exports.getExpenses = async (req, res) => {
     try {
         const userId = req.token.id
         const { month, year } = req.query
-
-        const filter = { user: userId }
-        if (month && year) {
-            const start = new Date(year, month - 1, 1)
-            const end = new Date(year, month, 0, 23, 59, 59, 999)
-            filter.date = { $gte: start, $lte: end }
-        }
-
-        const expenses = await Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
+        const expenses = await fetchExpenses(userId, month, year)
         return res.status(200).json({ result: expenses })
     } catch (err) {
         console.log(err)
@@ -94,7 +142,7 @@ exports.getExpenses = async (req, res) => {
 exports.createExpense = async (req, res) => {
     try {
         const userId = req.token.id
-        const { date, category, type, paymentMethod, notes, items, month, year } = req.body
+        const { date, category, type, paymentMethod, notes, items, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd } = req.body
 
         if (items && Array.isArray(items) && items.length > 0) {
             const valid = items.filter(i => i.description && i.amount)
@@ -108,24 +156,26 @@ exports.createExpense = async (req, res) => {
                 amount: parseFloat(i.amount),
                 type: type || 'expense',
                 paymentMethod: paymentMethod || 'Cash',
-                notes: notes || ''
+                notes: notes || '',
+                currency: currency || 'PHP',
+                isRecurring: !!isRecurring,
+                recurrenceRule: recurrenceRule || '',
+                recurrenceEnd: recurrenceEnd || null,
             }))
             await Expense.insertMany(docs)
         } else {
             const { description, amount } = req.body
             if (!description || !amount) return res.status(400).json({ alert: { variant: 'danger', message: 'Description and amount are required' } })
-            await new Expense({ user: userId, date: date || new Date(), description, category: category || null, amount, type: type || 'expense', paymentMethod: paymentMethod || 'Cash', notes }).save()
-        }
-
-        const filter = { user: userId }
-        if (month && year) {
-            const start = new Date(year, month - 1, 1)
-            const end = new Date(year, month, 0, 23, 59, 59, 999)
-            filter.date = { $gte: start, $lte: end }
+            await new Expense({
+                user: userId, date: date || new Date(), description, category: category || null,
+                amount, type: type || 'expense', paymentMethod: paymentMethod || 'Cash', notes,
+                currency: currency || 'PHP',
+                isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
+            }).save()
         }
 
         const count = items ? items.filter(i => i.description && i.amount).length : 1
-        const expenses = await Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
+        const expenses = await fetchExpenses(userId, month, year)
         return res.status(200).json({ result: expenses, alert: { variant: 'success', message: `${count} transaction${count !== 1 ? 's' : ''} added` } })
     } catch (err) {
         console.log(err)
@@ -136,19 +186,15 @@ exports.createExpense = async (req, res) => {
 exports.updateExpense = async (req, res) => {
     try {
         const userId = req.token.id
-        const { id, date, description, category, amount, type, paymentMethod, notes } = req.body
+        const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd } = req.body
 
-        await Expense.findOneAndUpdate({ _id: id, user: userId }, { date, description, category: category || null, amount, type, paymentMethod, notes })
+        await Expense.findOneAndUpdate({ _id: id, user: userId }, {
+            date, description, category: category || null, amount, type, paymentMethod, notes,
+            currency: currency || 'PHP',
+            isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
+        })
 
-        const { month, year } = req.body
-        const filter = { user: userId }
-        if (month && year) {
-            const start = new Date(year, month - 1, 1)
-            const end = new Date(year, month, 0, 23, 59, 59, 999)
-            filter.date = { $gte: start, $lte: end }
-        }
-
-        const expenses = await Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
+        const expenses = await fetchExpenses(userId, month, year)
         return res.status(200).json({ result: expenses, alert: { variant: 'success', message: 'Transaction updated' } })
     } catch (err) {
         console.log(err)
@@ -160,10 +206,12 @@ exports.deleteExpense = async (req, res) => {
     try {
         const userId = req.token.id
         const { id } = req.params
+        const { month, year } = req.query
 
         await Expense.findOneAndDelete({ _id: id, user: userId })
 
-        return res.status(200).json({ alert: { variant: 'success', message: 'Transaction deleted' } })
+        const expenses = await fetchExpenses(userId, month, year)
+        return res.status(200).json({ result: expenses, alert: { variant: 'success', message: 'Transaction deleted' } })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
@@ -180,15 +228,7 @@ exports.bulkDeleteExpenses = async (req, res) => {
         }
 
         const result = await Expense.deleteMany({ _id: { $in: ids }, user: userId })
-
-        const filter = { user: userId }
-        if (month && year) {
-            const start = new Date(year, month - 1, 1)
-            const end = new Date(year, month, 0, 23, 59, 59, 999)
-            filter.date = { $gte: start, $lte: end }
-        }
-
-        const expenses = await Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
+        const expenses = await fetchExpenses(userId, month, year)
 
         return res.status(200).json({
             result: expenses,
@@ -210,15 +250,7 @@ exports.bulkUpdateCategory = async (req, res) => {
         }
 
         await Expense.updateMany({ _id: { $in: ids }, user: userId }, { category: category || null })
-
-        const filter = { user: userId }
-        if (month && year) {
-            const start = new Date(year, month - 1, 1)
-            const end = new Date(year, month, 0, 23, 59, 59, 999)
-            filter.date = { $gte: start, $lte: end }
-        }
-
-        const expenses = await Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
+        const expenses = await fetchExpenses(userId, month, year)
 
         return res.status(200).json({
             result: expenses,
@@ -227,6 +259,67 @@ exports.bulkUpdateCategory = async (req, res) => {
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+// ==================== SEARCH ====================
+
+exports.searchExpenses = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { q, type, category, limit } = req.query
+
+        const filter = { user: userId }
+        if (q) filter.description = { $regex: new RegExp(escapeRegex(q), 'i') }
+        if (type && type !== 'all') filter.type = type
+        if (category) filter.category = category
+
+        const max = Math.min(parseInt(limit) || 100, 500)
+        const expenses = await Expense.find(filter).populate('category', 'name icon color type budget').sort({ date: -1 }).limit(max).lean()
+        return res.status(200).json({ result: expenses })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Search failed' } })
+    }
+}
+
+// ==================== CSV IMPORT ====================
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+exports.importCSV = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { rows, month, year } = req.body
+
+        if (!rows || !Array.isArray(rows) || rows.length === 0) {
+            return res.status(400).json({ alert: { variant: 'danger', message: 'No data to import' } })
+        }
+
+        const docs = rows.filter(r => r.description && r.amount).map(r => ({
+            user: userId,
+            date: r.date ? new Date(r.date) : new Date(),
+            description: r.description,
+            category: r.category || null,
+            amount: parseFloat(r.amount) || 0,
+            type: r.type || 'expense',
+            paymentMethod: r.paymentMethod || 'Cash',
+            notes: r.notes || 'Imported from CSV',
+            currency: r.currency || 'PHP',
+        }))
+
+        if (docs.length === 0) return res.status(400).json({ alert: { variant: 'danger', message: 'No valid rows found' } })
+
+        await Expense.insertMany(docs)
+        const expenses = await fetchExpenses(userId, month, year)
+
+        return res.status(200).json({
+            result: expenses,
+            alert: { variant: 'success', message: `Imported ${docs.length} transaction${docs.length !== 1 ? 's' : ''}` }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Import failed' } })
     }
 }
 
@@ -243,8 +336,8 @@ exports.getDashboard = async (req, res) => {
         const start = new Date(y, m - 1, 1)
         const end = new Date(y, m, 0, 23, 59, 59, 999)
 
-        const expenses = await Expense.find({ user: userId, date: { $gte: start, $lte: end } }).populate('category', 'name icon color type budget').lean()
-        const categories = await BudgetCategory.find({ user: userId }).lean()
+        const expenses = await Expense.find({ user: userId, date: { $gte: start, $lte: end } }).populate('category', 'name icon color type budget rollover').lean()
+        const categories = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).lean()
 
         let totalIncome = 0
         let totalExpenses = 0
@@ -275,6 +368,21 @@ exports.getDashboard = async (req, res) => {
 
         const totalBudget = categories.filter(c => c.type === 'expense').reduce((sum, c) => sum + (c.budget || 0), 0)
 
+        // Budget rollover: carry unspent budget from previous month for rollover-enabled categories
+        let rolloverAmount = 0
+        const rolloverCats = categories.filter(c => c.type === 'expense' && c.rollover && c.budget > 0)
+        if (rolloverCats.length > 0) {
+            const prevStart = new Date(y, m - 2, 1)
+            const prevEnd = new Date(y, m - 1, 0, 23, 59, 59, 999)
+            const prevExpenses = await Expense.find({ user: userId, date: { $gte: prevStart, $lte: prevEnd } }).populate('category', 'name').lean()
+
+            for (const cat of rolloverCats) {
+                const prevSpent = prevExpenses.filter(e => e.type === 'expense' && e.category?.name === cat.name).reduce((s, e) => s + e.amount, 0)
+                const unspent = Math.max(0, cat.budget - prevSpent)
+                rolloverAmount += unspent
+            }
+        }
+
         const topCategories = Object.entries(categoryTotals)
             .filter(([_, v]) => v.amount > 0)
             .sort((a, b) => b[1].amount - a[1].amount)
@@ -287,7 +395,8 @@ exports.getDashboard = async (req, res) => {
                 totalExpenses,
                 balance: totalIncome - totalExpenses,
                 totalBudget,
-                remainingBudget: totalBudget - totalExpenses,
+                remainingBudget: totalBudget - totalExpenses + rolloverAmount,
+                rolloverAmount,
                 topCategories,
                 dailyTotals,
                 paymentMethodTotals,
@@ -302,62 +411,49 @@ exports.getDashboard = async (req, res) => {
     }
 }
 
-// ==================== SEED FROM SHEET ====================
+// ==================== RECURRING ====================
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
-exports.seedFromSheet = async (req, res) => {
+exports.processRecurring = async (req, res) => {
     try {
         const userId = req.token.id
 
-        const sheetData = [
-            1336, 1934, 2246, 2405, 3494, 2601, 3528, 783, 165, 115,
-            188, 397, 1221, 21, 422, 476, 1430, 28, 671, 228,
-            2563, 2823, 2287, 258, 52, 759, 993, 504, 5, 3979,
-            2833, 189
-        ]
+        const templates = await Expense.find({ user: userId, isRecurring: true, recurrenceRule: { $ne: '' } }).lean()
+        const now = new Date()
+        let created = 0
 
-        let category = await BudgetCategory.findOne({ user: userId, name: 'Tickets' })
-        if (!category) {
-            category = await new BudgetCategory({
-                user: userId,
-                name: 'Tickets',
-                color: '#6366f1',
-                type: 'expense',
-                budget: 0
-            }).save()
+        for (const tpl of templates) {
+            if (tpl.recurrenceEnd && new Date(tpl.recurrenceEnd) < now) continue
+
+            const lastGenerated = await Expense.findOne({ user: userId, recurrenceParentId: tpl._id }).sort({ date: -1 }).lean()
+            const lastDate = lastGenerated ? new Date(lastGenerated.date) : new Date(tpl.date)
+
+            let nextDate = new Date(lastDate)
+            const rule = tpl.recurrenceRule
+            if (rule === 'daily') nextDate.setDate(nextDate.getDate() + 1)
+            else if (rule === 'weekly') nextDate.setDate(nextDate.getDate() + 7)
+            else if (rule === 'biweekly') nextDate.setDate(nextDate.getDate() + 14)
+            else if (rule === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1)
+
+            while (nextDate <= now) {
+                if (tpl.recurrenceEnd && nextDate > new Date(tpl.recurrenceEnd)) break
+                await new Expense({
+                    user: userId, date: new Date(nextDate), description: tpl.description,
+                    category: tpl.category, amount: tpl.amount, type: tpl.type,
+                    paymentMethod: tpl.paymentMethod, notes: tpl.notes, currency: tpl.currency || 'PHP',
+                    recurrenceParentId: tpl._id,
+                }).save()
+                created++
+                if (rule === 'daily') nextDate.setDate(nextDate.getDate() + 1)
+                else if (rule === 'weekly') nextDate.setDate(nextDate.getDate() + 7)
+                else if (rule === 'biweekly') nextDate.setDate(nextDate.getDate() + 14)
+                else if (rule === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1)
+            }
         }
 
-        const now = new Date()
-        const m = req.body.month || now.getMonth() + 1
-        const y = req.body.year || now.getFullYear()
-        const daysInMonth = new Date(y, m, 0).getDate()
-
-        const entries = sheetData.slice(0, daysInMonth).map((amount, i) => ({
-            user: userId,
-            date: new Date(y, m - 1, i + 1),
-            description: `Daily Tickets - Day ${i + 1}`,
-            category: category._id,
-            amount,
-            type: 'expense',
-            paymentMethod: 'Cash',
-            notes: 'Imported from Google Sheets'
-        }))
-
-        await Expense.insertMany(entries)
-
-        const allExpenses = await Expense.find({
-            user: userId,
-            date: { $gte: new Date(y, m - 1, 1), $lte: new Date(y, m, 0, 23, 59, 59, 999) }
-        }).populate('category', 'name icon color type budget').sort({ date: -1 }).lean()
-
-        return res.status(200).json({
-            result: allExpenses,
-            alert: { variant: 'success', message: `Imported ${entries.length} daily ticket entries for ${MONTHS[m - 1]} ${y}` }
-        })
+        return res.status(200).json({ created, alert: created > 0 ? { variant: 'success', message: `${created} recurring transaction${created !== 1 ? 's' : ''} generated` } : undefined })
     } catch (err) {
         console.log(err)
-        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to process recurring transactions' } })
     }
 }
 
@@ -550,6 +646,21 @@ exports.removeDebtPayment = async (req, res) => {
         const debt = await Debt.findOne({ _id: id, user: userId })
         if (!debt) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
 
+        const payment = debt.payments.id(paymentId)
+        if (payment) {
+            const personLabel = debt.person ? ` → ${debt.person}` : ''
+            const descPattern = `Debt: ${debt.name}${personLabel}`
+            const payDate = new Date(payment.date)
+            const dayStart = new Date(payDate.getFullYear(), payDate.getMonth(), payDate.getDate())
+            const dayEnd = new Date(payDate.getFullYear(), payDate.getMonth(), payDate.getDate() + 1)
+            await Expense.findOneAndDelete({
+                user: userId,
+                description: descPattern,
+                amount: payment.amount,
+                date: { $gte: dayStart, $lt: dayEnd },
+            })
+        }
+
         debt.payments = debt.payments.filter(p => p._id.toString() !== paymentId)
         debt.amount_paid = debt.payments.reduce((s, p) => s + p.amount, 0)
         debt.status = debt.amount_paid >= debt.total_amount ? 'paid' : 'active'
@@ -571,11 +682,22 @@ exports.toggleDebtStatus = async (req, res) => {
         const debt = await Debt.findOne({ _id: id, user: userId })
         if (!debt) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
 
-        debt.status = debt.status === 'paid' ? 'active' : 'paid'
+        let warning = ''
+        if (debt.status === 'active') {
+            debt.status = 'paid'
+            if (debt.amount_paid < debt.total_amount) {
+                warning = ` (Note: only ${((debt.amount_paid / debt.total_amount) * 100).toFixed(0)}% paid)`
+            }
+        } else {
+            debt.status = debt.amount_paid >= debt.total_amount ? 'paid' : 'active'
+            if (debt.amount_paid >= debt.total_amount) {
+                warning = ' (fully paid - status unchanged)'
+            }
+        }
         await debt.save()
 
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
-        return res.status(200).json({ result: debts, alert: { variant: 'success', message: `Debt marked as ${debt.status}` } })
+        return res.status(200).json({ result: debts, alert: { variant: 'success', message: `Debt marked as ${debt.status}${warning}` } })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
@@ -638,5 +760,83 @@ exports.deleteBudgetList = async (req, res) => {
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to delete list' } })
+    }
+}
+
+// ==================== FINANCIAL GOALS ====================
+
+exports.getGoals = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: goals })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to load goals' } })
+    }
+}
+
+exports.createGoal = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { name, targetAmount, deadline, category, color, icon, notes } = req.body
+        if (!name || !targetAmount) return res.status(400).json({ alert: { variant: 'danger', message: 'Name and target amount are required' } })
+
+        await new FinancialGoal({ user: userId, name, targetAmount, deadline: deadline || null, category: category || null, color: color || '#3b82f6', icon: icon || 'bullseye', notes: notes || '' }).save()
+        const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Goal created' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to create goal' } })
+    }
+}
+
+exports.updateGoal = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id, name, targetAmount, deadline, category, color, icon, notes, status } = req.body
+        await FinancialGoal.findOneAndUpdate({ _id: id, user: userId }, { name, targetAmount, deadline: deadline || null, category: category || null, color, icon, notes, status })
+        const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Goal updated' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to update goal' } })
+    }
+}
+
+exports.deleteGoal = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+        await FinancialGoal.findOneAndDelete({ _id: id, user: userId })
+        const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Goal deleted' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to delete goal' } })
+    }
+}
+
+exports.addGoalContribution = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+        const { amount, notes } = req.body
+
+        if (!amount || amount <= 0) return res.status(400).json({ alert: { variant: 'danger', message: 'Valid amount is required' } })
+
+        const goal = await FinancialGoal.findOne({ _id: id, user: userId })
+        if (!goal) return res.status(404).json({ alert: { variant: 'danger', message: 'Goal not found' } })
+
+        goal.contributions.push({ amount, notes: notes || '' })
+        goal.currentAmount = goal.contributions.reduce((s, c) => s + c.amount, 0)
+        if (goal.currentAmount >= goal.targetAmount) goal.status = 'completed'
+        await goal.save()
+
+        const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+        return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Contribution added' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to add contribution' } })
     }
 }

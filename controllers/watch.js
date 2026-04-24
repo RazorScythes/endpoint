@@ -3,6 +3,7 @@ const Comment            = require('../models/comment.model')
 const Groups             = require('../models/grouplist.model')
 const Users              = require('../models/user.model')
 const db                 = require('../plugins/database')
+const { createNotification } = require('./notification')
 
 exports.likeVideo = async (req, res) => {
     const { user } = req.token
@@ -28,6 +29,20 @@ exports.likeVideo = async (req, res) => {
 
         const io = req.app.get('io')
         io.to(`video:${videoId}`).emit('likes_updated', { videoId, ...result })
+
+        if (!alreadyLiked && video.user) {
+            const populatedVideo = await Video.findById(videoId).populate('user', 'username')
+            createNotification({
+                recipientId: video.user,
+                senderId: user._id,
+                type: 'like',
+                message: `liked your video "${populatedVideo?.title || 'Untitled'}"`,
+                link: `/watch/${videoId}`,
+                referenceId: videoId,
+                referenceModel: 'Video',
+                io
+            })
+        }
 
         res.status(200).json({ result })
     } catch (err) {
@@ -96,6 +111,18 @@ exports.toggleSubscribe = async (req, res) => {
             targetUser.subscribers = targetUser.subscribers.filter(id => id !== currentUserId)
         } else {
             targetUser.subscribers.push(currentUserId)
+
+            const io = req.app.get('io')
+            createNotification({
+                recipientId: targetUserId,
+                senderId: user._id,
+                type: 'subscribe',
+                message: `subscribed to your channel`,
+                link: `/user/${user.username || user._id}`,
+                referenceId: user._id,
+                referenceModel: 'User',
+                io
+            })
         }
 
         await targetUser.save()
@@ -254,17 +281,17 @@ exports.getVideoById = async (req, res) => {
         if(settings) {
             if(settings.settings_id.safe_content || settings.settings_id.safe_content === undefined) {
                 if(video.strict) { 
-                    return res.status(409).json({ forbiden: 'strict'});
+                    return res.status(409).json({ forbidden: 'strict'});
                 }
                 else if(video.privacy) { 
-                    if(video.access_key === access_key || video.user._id.equals(useruser._id)) {
+                    if(video.access_key === access_key || video.user._id.equals(user._id)) {
                         return res.status(200).json({ result });
                     }
                     else if(!access_key) {
-                        return res.status(409).json({ forbiden: 'private' }); 
+                        return res.status(409).json({ forbidden: 'private' }); 
                     }
                     else {
-                        return res.status(409).json({ forbiden: 'access_invalid' }); 
+                        return res.status(409).json({ forbidden: 'access_invalid' }); 
                     }
                 }
                 else { 
@@ -273,17 +300,17 @@ exports.getVideoById = async (req, res) => {
             }
             else {
                 if(video.strict) { 
-                    return res.status(409).json({ forbiden: 'strict'});
+                    return res.status(409).json({ forbidden: 'strict'});
                 }
                 else if(video.privacy) { 
                     if(video.access_key === access_key || video.user._id.equals(user._id)) {
                         return res.status(200).json({ result });
                     }
                     else if(!access_key) {
-                        return res.status(409).json({ forbiden: 'private' }); 
+                        return res.status(409).json({ forbidden: 'private' }); 
                     }
                     else {
-                        return res.status(409).json({ forbiden: 'access_invalid' }); 
+                        return res.status(409).json({ forbidden: 'access_invalid' }); 
                     }
                 }
                 else { 
@@ -293,21 +320,21 @@ exports.getVideoById = async (req, res) => {
         }
         else {
             if(video.strict) { 
-                res.status(409).json({ forbiden: 'strict' }); 
+                return res.status(409).json({ forbidden: 'strict' }); 
             }
             else if(video.privacy) { 
                 if(!access_key) {
-                    return res.status(409).json({ forbiden: 'private' }); 
+                    return res.status(409).json({ forbidden: 'private' }); 
                 }
                 else if(video.access_key === access_key) {
                     return res.status(200).json({ result });
                 }
                 else {
-                    return res.status(409).json({ forbiden: 'access_invalid' }); 
+                    return res.status(409).json({ forbidden: 'access_invalid' }); 
                 }
             }
             else { 
-                return res.status(200).json({  result: result });
+                return res.status(200).json({ result });
             }
         }
     } catch (err) {
@@ -401,6 +428,19 @@ exports.addVideoComment = async (req, res) => {
 
         const io = req.app.get('io')
         io.to(`video:${req.body.parent_id}`).emit('comments_updated', { videoId: req.body.parent_id, comments })
+
+        if (existing.user && req.body.user) {
+            createNotification({
+                recipientId: existing.user,
+                senderId: req.body.user,
+                type: 'comment',
+                message: `commented on your video "${existing.title || 'Untitled'}"`,
+                link: `/watch/${req.body.parent_id}`,
+                referenceId: req.body.parent_id,
+                referenceModel: 'Video',
+                io
+            })
+        }
 
         res.status(200).json({ 
             result: comments,
@@ -504,5 +544,78 @@ exports.viewVideo = async (req, res) => {
     } catch (err) {
         console.log(err);
         return res.status(500).json({ alert: { variant: 'danger', message: 'internal server error' } });
+    }
+}
+
+exports.getRelatedVideos = async (req, res) => {
+    const { id } = req.params;
+    const limit = parseInt(req.query.limit) || 8;
+
+    try {
+        const video = await Video.findById(id).select('tags category groups');
+        if (!video) return res.status(200).json({ result: [] });
+
+        const publicGroups = await Groups.find({
+            strict: { $ne: true },
+            privacy: { $ne: true }
+        }).select('_id');
+        const groupIds = publicGroups.map(g => g._id);
+
+        const tagNames = (video.tags || []).map(t => t.name).filter(Boolean);
+        const catIds = (video.category || []).map(c => c._id || c).filter(Boolean);
+
+        const matchConditions = [
+            { 'tags.name': { $in: tagNames } },
+            { category: { $elemMatch: { _id: { $in: catIds } } } },
+            { groups: video.groups }
+        ];
+
+        const pipeline = [
+            {
+                $match: {
+                    _id: { $ne: video._id },
+                    groups: { $in: groupIds },
+                    strict: { $ne: true },
+                    privacy: { $ne: true },
+                    $or: matchConditions
+                }
+            },
+            {
+                $addFields: {
+                    relevance: {
+                        $add: [
+                            { $size: { $setIntersection: [{ $ifNull: [{ $map: { input: '$tags', as: 't', in: '$$t.name' } }, []] }, tagNames] } },
+                            { $cond: [{ $eq: ['$groups', video.groups] }, 2, 0] }
+                        ]
+                    },
+                    viewsCount: { $size: { $ifNull: ['$views', []] } }
+                }
+            },
+            { $sort: { relevance: -1, viewsCount: -1, createdAt: -1 } },
+            { $limit: limit },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'user',
+                    foreignField: '_id',
+                    as: 'userData'
+                }
+            },
+            { $unwind: { path: '$userData', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    _id: 1, thumbnail: 1, title: 1, views: 1, likes: 1,
+                    tags: 1, duration: 1, downloadUrl: 1, createdAt: 1,
+                    user: { $ifNull: ['$userData.username', ''] },
+                    avatar: { $ifNull: ['$userData.avatar', ''] }
+                }
+            }
+        ];
+
+        const result = await Video.aggregate(pipeline);
+        return res.status(200).json({ result });
+    } catch (err) {
+        console.log(err);
+        return res.status(200).json({ result: [] });
     }
 }

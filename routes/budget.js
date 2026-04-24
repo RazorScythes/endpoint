@@ -12,9 +12,17 @@ router.get('/categories', auth.authenticateToken, auth.userRequired, auth.allowC
 router.post('/category', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createCategory))
 router.patch('/category', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.updateCategory))
 router.delete('/category/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteCategory))
+router.post('/category/share', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.shareCategory))
+router.post('/category/unshare', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.unshareCategory))
 
-// SEED
-router.post('/seed', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.seedFromSheet))
+// IMPORT
+router.post('/import-csv', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.importCSV))
+
+// SEARCH
+router.get('/search', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.searchExpenses))
+
+// RECURRING
+router.post('/recurring/process', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.processRecurring))
 
 // EXPENSES
 router.get('/expenses', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getExpenses))
@@ -44,5 +52,12 @@ router.get('/lists', auth.authenticateToken, auth.userRequired, auth.allowCors(b
 router.post('/list', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createBudgetList))
 router.patch('/list', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.updateBudgetList))
 router.delete('/list/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteBudgetList))
+
+// FINANCIAL GOALS
+router.get('/goals', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getGoals))
+router.post('/goal', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createGoal))
+router.patch('/goal', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.updateGoal))
+router.delete('/goal/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteGoal))
+router.post('/goal/:id/contribution', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.addGoalContribution))
 
 module.exports = router

@@ -2,6 +2,11 @@ const Game = require('../models/game.model')
 const User = require('../models/user.model')
 const Comment = require('../models/comment.model')
 const db = require('../plugins/database')
+const { createNotification } = require('./notification')
+
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 const getUserSafeContent = async (userId) => {
     if (!userId) return true
@@ -56,7 +61,7 @@ exports.getGameByID = async (req, res) => {
         if (game.strict && !isOwner) {
             const safeContent = await getUserSafeContent(id)
             if (safeContent) {
-                return res.status(200).json({ result: {}, forbiden: 'strict' })
+                return res.status(200).json({ result: {}, forbidden: 'strict' })
             }
         }
 
@@ -64,10 +69,10 @@ exports.getGameByID = async (req, res) => {
             if (access_key && game.access_key?.length > 0) {
                 const ak = game.access_key.find(k => k.key === access_key)
                 if (!ak) {
-                    return res.status(200).json({ result: {}, forbiden: 'access_invalid' })
+                    return res.status(200).json({ result: {}, forbidden: 'access_invalid' })
                 }
                 if (ak.download_limit > 0 && ak.user_downloaded.length >= ak.download_limit) {
-                    return res.status(200).json({ result: {}, forbiden: 'access_limit' })
+                    return res.status(200).json({ result: {}, forbidden: 'access_limit' })
                 }
                 if (cookie_id && !ak.user_downloaded.includes(cookie_id)) {
                     await Game.updateOne(
@@ -76,7 +81,7 @@ exports.getGameByID = async (req, res) => {
                     )
                 }
             } else {
-                return res.status(200).json({ result: {}, forbiden: 'private' })
+                return res.status(200).json({ result: {}, forbidden: 'private' })
             }
         }
 
@@ -90,7 +95,7 @@ exports.getGameByID = async (req, res) => {
             username: game.user?.username || ''
         }
 
-        return res.status(200).json({ result, forbiden: access_key ? 'access_granted' : false })
+        return res.status(200).json({ result, forbidden: access_key ? 'access_granted' : false })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ message: 'Server error', variant: 'danger' })
@@ -104,13 +109,22 @@ exports.getRelatedGames = async (req, res) => {
         const safeContent = await getUserSafeContent(id)
 
         let cat = category
-        if (!cat && gameId) {
-            const source = await Game.findById(gameId).select('category').lean()
-            cat = source?.category
+        let sourceTags = []
+        let sourceDev = ''
+        if (gameId) {
+            const source = await Game.findById(gameId).select('category tags details.developer').lean()
+            if (!cat) cat = source?.category
+            sourceTags = source?.tags || []
+            sourceDev = source?.details?.developer || ''
         }
 
+        const matchOr = []
+        if (cat) matchOr.push({ category: cat })
+        if (sourceTags.length > 0) matchOr.push({ tags: { $in: sourceTags } })
+        if (sourceDev) matchOr.push({ 'details.developer': sourceDev })
+
         const filter = { _id: { $ne: gameId }, deleted_at: null }
-        if (cat) filter.category = cat
+        if (matchOr.length > 0) filter.$or = matchOr
 
         const conditions = [filter]
 
@@ -303,9 +317,22 @@ exports.getGameByTag = async (req, res) => {
     try {
         const { id, tag } = req.body
 
-        const query = id
-            ? { tags: { $in: [new RegExp(tag, 'i')] }, $or: [{ privacy: false }, { user: id }], deleted_at: null }
-            : { tags: { $in: [new RegExp(tag, 'i')] }, privacy: false, deleted_at: null }
+        const safeContent = await getUserSafeContent(id)
+        const safeTag = new RegExp(escapeRegex(tag), 'i')
+
+        const conditions = [{ tags: { $in: [safeTag] }, deleted_at: null }]
+
+        if (id) {
+            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+        } else {
+            conditions.push({ privacy: false })
+        }
+
+        if (safeContent) {
+            conditions.push({ strict: { $ne: true } })
+        }
+
+        const query = { $and: conditions }
 
         const games = await Game.find(query)
             .populate({ path: 'user', select: 'username avatar' })
@@ -325,7 +352,7 @@ exports.getGameByDeveloper = async (req, res) => {
 
         const safeContent = await getUserSafeContent(id)
 
-        const conditions = [{ 'details.developer': { $regex: developer, $options: 'i' }, deleted_at: null }]
+        const conditions = [{ 'details.developer': { $regex: escapeRegex(developer), $options: 'i' }, deleted_at: null }]
 
         if (id) {
             conditions.push({ $or: [{ privacy: false }, { user: id }] })
@@ -369,7 +396,7 @@ exports.getGameBySearchKey = async (req, res) => {
 
         const safeContent = await getUserSafeContent(id)
 
-        const regex = new RegExp(searchKey, 'i')
+        const regex = new RegExp(escapeRegex(searchKey), 'i')
 
         const baseQuery = {
             $or: [
@@ -454,17 +481,22 @@ exports.getRecentGameBlog = async (req, res) => {
 
 exports.addRecentGamingBlogLikes = async (req, res) => {
     try {
-        const { id, gameId, likes, userId } = req.body
+        const { id, gameId, uid, userId } = req.body
 
         const targetId = gameId || id
+        const likerId = uid || userId
+
+        if (!likerId) return res.status(400).json({ message: 'User ID required', variant: 'danger' })
 
         const game = await Game.findById(targetId)
         if (!game) return res.status(404).json({ message: 'Game not found', variant: 'danger' })
 
-        if (likes) {
-            game.likes = likes
+        const idx = game.likes.indexOf(likerId)
+        if (idx === -1) {
+            game.likes.push(likerId)
+        } else {
+            game.likes.splice(idx, 1)
         }
-
         await game.save()
 
         const viewerId = userId || ''
@@ -521,6 +553,19 @@ exports.uploadGameComment = async (req, res) => {
 
         const io = req.app.get('io')
         io.to(`game:${req.body.parent_id}`).emit('game_comments_updated', { gameId: req.body.parent_id, comments })
+
+        if (existing.user && req.body.user) {
+            createNotification({
+                recipientId: existing.user,
+                senderId: req.body.user,
+                type: 'comment',
+                message: `commented on your game "${existing.title || 'Untitled'}"`,
+                link: `/games/${req.body.parent_id}`,
+                referenceId: req.body.parent_id,
+                referenceModel: 'Game',
+                io
+            })
+        }
 
         res.status(200).json({
             result: comments,
@@ -600,6 +645,112 @@ exports.removeGameComment = async (req, res) => {
     }
 }
 
+exports.toggleBookmark = async (req, res) => {
+    try {
+        const { userId, gameId } = req.body
+        if (!userId || !gameId) return res.status(400).json({ message: 'Missing userId or gameId', variant: 'danger' })
+
+        const game = await Game.findById(gameId)
+        if (!game) return res.status(404).json({ message: 'Game not found', variant: 'danger' })
+
+        const idx = game.bookmarks.indexOf(userId)
+        if (idx === -1) {
+            game.bookmarks.push(userId)
+        } else {
+            game.bookmarks.splice(idx, 1)
+        }
+        await game.save()
+
+        return res.status(200).json({ result: game.bookmarks, bookmarked: idx === -1 })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.getBookmarkedGames = async (req, res) => {
+    try {
+        const { userId } = req.body
+        if (!userId) return res.status(200).json({ result: [] })
+
+        const games = await Game.find({ bookmarks: userId, deleted_at: null })
+            .populate({ path: 'user', select: 'username avatar' })
+            .sort({ createdAt: -1 })
+            .lean()
+
+        return res.status(200).json({ result: games })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.addReview = async (req, res) => {
+    try {
+        const { userId, gameId, rating, text } = req.body
+        if (!userId || !gameId) return res.status(400).json({ message: 'Missing required fields', variant: 'danger' })
+
+        const game = await Game.findById(gameId)
+        if (!game) return res.status(404).json({ message: 'Game not found', variant: 'danger' })
+
+        const existingIdx = game.reviews.findIndex(r => String(r.user) === userId)
+        if (existingIdx !== -1) {
+            game.reviews[existingIdx].rating = rating || 0
+            game.reviews[existingIdx].text = text || ''
+            game.reviews[existingIdx].createdAt = new Date()
+        } else {
+            game.reviews.push({ user: userId, rating: rating || 0, text: text || '', createdAt: new Date() })
+        }
+
+        await game.save()
+
+        const updated = await Game.findById(gameId)
+            .populate({ path: 'reviews.user', select: 'username avatar' })
+            .lean()
+
+        return res.status(200).json({ result: updated.reviews, alert: 'Review submitted', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.deleteReview = async (req, res) => {
+    try {
+        const { userId, gameId } = req.body
+        if (!userId || !gameId) return res.status(400).json({ message: 'Missing required fields', variant: 'danger' })
+
+        await Game.findByIdAndUpdate(gameId, { $pull: { reviews: { user: userId } } })
+
+        const updated = await Game.findById(gameId)
+            .populate({ path: 'reviews.user', select: 'username avatar' })
+            .lean()
+
+        return res.status(200).json({ result: updated?.reviews || [], alert: 'Review deleted', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.getGameReviews = async (req, res) => {
+    try {
+        const { gameId } = req.body
+
+        const game = await Game.findById(gameId)
+            .populate({ path: 'reviews.user', select: 'username avatar' })
+            .select('reviews')
+            .lean()
+
+        if (!game) return res.status(404).json({ message: 'Game not found', variant: 'danger' })
+
+        return res.status(200).json({ result: game.reviews || [] })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
 exports.toggleFavoriteGame = async (req, res) => {
     try {
         const { userId, gameId } = req.body
@@ -640,6 +791,99 @@ exports.getFavoriteGames = async (req, res) => {
         }
 
         return res.status(200).json({ result: user.favorite_games || [] })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.getCollections = async (req, res) => {
+    try {
+        const { userId } = req.body
+        if (!userId) return res.status(200).json({ result: [] })
+
+        const user = await User.findById(userId).select('game_collections').lean()
+        return res.status(200).json({ result: user?.game_collections || [] })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.createCollection = async (req, res) => {
+    try {
+        const { userId, name } = req.body
+        if (!userId || !name) return res.status(400).json({ message: 'Missing fields', variant: 'danger' })
+
+        const user = await User.findById(userId)
+        if (!user) return res.status(404).json({ message: 'User not found', variant: 'danger' })
+
+        user.game_collections.push({ name, games: [], createdAt: new Date() })
+        await user.save()
+
+        return res.status(200).json({ result: user.game_collections, alert: 'Collection created', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.deleteCollection = async (req, res) => {
+    try {
+        const { userId, collectionId } = req.body
+        if (!userId || !collectionId) return res.status(400).json({ message: 'Missing fields', variant: 'danger' })
+
+        await User.findByIdAndUpdate(userId, { $pull: { game_collections: { _id: collectionId } } })
+        const user = await User.findById(userId).select('game_collections').lean()
+
+        return res.status(200).json({ result: user?.game_collections || [], alert: 'Collection deleted', variant: 'success' })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.toggleGameInCollection = async (req, res) => {
+    try {
+        const { userId, collectionId, gameId } = req.body
+        if (!userId || !collectionId || !gameId) return res.status(400).json({ message: 'Missing fields', variant: 'danger' })
+
+        const user = await User.findById(userId)
+        if (!user) return res.status(404).json({ message: 'User not found', variant: 'danger' })
+
+        const col = user.game_collections.id(collectionId)
+        if (!col) return res.status(404).json({ message: 'Collection not found', variant: 'danger' })
+
+        const idx = col.games.indexOf(gameId)
+        if (idx === -1) {
+            col.games.push(gameId)
+        } else {
+            col.games.splice(idx, 1)
+        }
+        await user.save()
+
+        return res.status(200).json({ result: user.game_collections })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: 'Server error', variant: 'danger' })
+    }
+}
+
+exports.getCollectionGames = async (req, res) => {
+    try {
+        const { userId, collectionId } = req.body
+        if (!userId || !collectionId) return res.status(200).json({ result: [] })
+
+        const user = await User.findById(userId).select('game_collections').lean()
+        const col = user?.game_collections?.find(c => String(c._id) === collectionId)
+        if (!col) return res.status(200).json({ result: [] })
+
+        const games = await Game.find({ _id: { $in: col.games }, deleted_at: null })
+            .populate({ path: 'user', select: 'username avatar' })
+            .sort({ createdAt: -1 })
+            .lean()
+
+        return res.status(200).json({ result: games, collection: col })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ message: 'Server error', variant: 'danger' })

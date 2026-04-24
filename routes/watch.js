@@ -12,6 +12,7 @@ router.get('/getVideosByType/:type', auth.authenticateToken, auth.userRequired, 
 router.get('/getVideoById/:id/:access_key?', auth.authenticateToken, auth.userRequired, auth.allowCors(watch.getVideoById));
 router.get('/getVideoComment/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(watch.getVideoComment));
 router.get('/getVideoList/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(watch.getVideoList));
+router.get('/getRelatedVideos/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(watch.getRelatedVideos));
 
 // POST REQUEST
 router.post('/addVideoComment', auth.authenticateToken, auth.userRequired, auth.allowCors(watch.addVideoComment));

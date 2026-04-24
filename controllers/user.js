@@ -98,8 +98,11 @@ exports.deleteUser = async (req, res) => {
             })
         }
 
-        await Users.findByIdAndDelete(id)
+        if (targetUser.profile_id) await Profile.findByIdAndDelete(targetUser.profile_id)
+        if (targetUser.settings_id) await Settings.findByIdAndDelete(targetUser.settings_id)
+        await ActivityLog.deleteMany({ user: id })
         await Ban.deleteOne({ user: id })
+        await Users.findByIdAndDelete(id)
 
         const users = await fetchAllUsers()
 
@@ -364,7 +367,10 @@ exports.googleLogin = async (req, res) => {
     }
 
     try {
-        const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${credential}`);
+        let verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+        if (!verifyRes.ok) {
+            verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${credential}`);
+        }
         if (!verifyRes.ok) {
             return res.status(401).json({ message: 'Invalid Google credential' });
         }
@@ -511,6 +517,80 @@ exports.updateProfile = async (req, res) => {
     }
 }
 
+exports.changePassword = async (req, res) => {
+    const { user } = req.token
+    const { password } = req.body
+
+    if (!password?.old || !password?.new || !password?.confirm) {
+        return res.status(400).json({
+            alert: 'All password fields are required',
+            variant: 'danger'
+        })
+    }
+
+    if (password.new !== password.confirm) {
+        return res.status(400).json({
+            alert: 'New passwords do not match',
+            variant: 'danger'
+        })
+    }
+
+    if (password.new.length < 6) {
+        return res.status(400).json({
+            alert: 'Password must be at least 6 characters',
+            variant: 'danger'
+        })
+    }
+
+    if (password.old === password.new) {
+        return res.status(400).json({
+            alert: 'New password must be different from current password',
+            variant: 'danger'
+        })
+    }
+
+    try {
+        const fullUser = await Users.findById(user._id)
+        if (!fullUser || !fullUser.password) {
+            return res.status(400).json({
+                alert: 'Password change not available for this account',
+                variant: 'danger'
+            })
+        }
+
+        const isMatch = await bcrypt.compare(password.old, fullUser.password)
+        if (!isMatch) {
+            return res.status(400).json({
+                alert: 'Current password is incorrect',
+                variant: 'danger'
+            })
+        }
+
+        const salt = await bcrypt.genSalt(12)
+        const hashed = await bcrypt.hash(password.new, salt)
+
+        await Users.findByIdAndUpdate(user._id, { password: hashed })
+
+        logActivity(req, {
+            action: 'change_password',
+            category: 'account',
+            message: 'Password changed successfully'
+        })
+
+        res.status(200).json({
+            result: {},
+            alert: 'Password updated successfully',
+            variant: 'success'
+        })
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            alert: 'Internal server error',
+            variant: 'danger'
+        })
+    }
+}
+
 exports.getSettings = async (req, res) => {
     try {
         const { user } = req.token
@@ -605,17 +685,21 @@ exports.deleteAccount = async (req, res) => {
             }
         }
 
+        await ActivityLog.create({
+            user: user._id,
+            action: 'delete_account',
+            category: 'account',
+            message: `Account "${user.username}" deleted`,
+            method: 'DELETE',
+            ip_address: req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
+            user_agent: req.headers['user-agent'],
+        }).catch(() => {})
+
         await Profile.findByIdAndDelete(user.profile_id?._id)
         await Settings.findByIdAndDelete(user.settings_id?._id)
         await ActivityLog.deleteMany({ user: user._id })
         await Ban.deleteOne({ user: user._id })
         await Users.findByIdAndDelete(user._id)
-
-        logActivity(req, {
-            action: 'delete_account',
-            category: 'account',
-            message: `Account "${user.username}" deleted`
-        })
 
         res.status(200).json({
             alert: { variant: 'success', message: 'Account deleted successfully' }

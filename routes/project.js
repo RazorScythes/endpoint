@@ -11,6 +11,16 @@ router.post('/removeCategory', auth.authenticateToken, auth.userRequired, auth.a
 router.post('/uploadProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.uploadProject))
 router.post('/editUserProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.editUserProject))
 router.post('/removeUserProject', auth.authenticateToken, auth.userRequired, auth.allowCors(project.removeUserProject))
+router.post('/bulkDeleteProjects', auth.authenticateToken, auth.userRequired, auth.allowCors(project.bulkDeleteProjects))
+router.post('/bulkUpdateProjects', auth.authenticateToken, auth.userRequired, auth.allowCors(project.bulkUpdateProjects))
+
+router.post('/addCollaborator', auth.authenticateToken, auth.userRequired, auth.allowCors(project.addCollaborator))
+router.post('/removeCollaborator', auth.authenticateToken, auth.userRequired, auth.allowCors(project.removeCollaborator))
+router.post('/getProjectAnalytics', auth.authenticateToken, auth.userRequired, auth.allowCors(project.getProjectAnalytics))
+
+router.post('/toggleBookmark', auth.allowCors(project.toggleBookmark))
+router.post('/getBookmarkedProjects', auth.allowCors(project.getBookmarkedProjects))
+router.post('/getRelatedProjects', auth.allowCors(project.getRelatedProjects))
 
 router.post('/getProjectByID', auth.allowCors(project.getProjectByID))
 router.post('/getCategory', auth.allowCors(project.getCategory))

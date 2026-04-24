@@ -9,8 +9,8 @@ const projectSchema = new Schema({
     },
     featured_image: { type: String, default: '' },
     post_title: { type: String, required: true },
-    date_start: { type: String, default: '' },
-    date_end: { type: String, default: '' },
+    date_start: { type: Date, default: null },
+    date_end: { type: Date, default: null },
     created_for: { type: String, default: 'Personal' },
     categories: { type: String, default: '' },
     privacy: { type: Boolean, default: false },
@@ -24,6 +24,23 @@ const projectSchema = new Schema({
     content: [{ type: Schema.Types.Mixed }],
     views: [{ type: String }],
     likes: [{ type: String }],
+    bookmarks: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    status: { type: String, enum: ['draft', 'in-progress', 'completed', 'archived'], default: 'draft' },
+    collaborators: [{
+        user: { type: Schema.Types.ObjectId, ref: 'User' },
+        role: { type: String, enum: ['editor', 'viewer'], default: 'viewer' }
+    }],
+    attachments: [{
+        name: { type: String },
+        url: { type: String },
+        type: { type: String },
+        size: { type: Number, default: 0 }
+    }],
+    changelog: [{
+        version: { type: String },
+        date: { type: Date, default: Date.now },
+        description: { type: String }
+    }],
     comment: [{
         user_id: { type: Schema.Types.ObjectId, ref: 'User' },
         text: { type: String },

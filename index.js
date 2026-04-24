@@ -38,6 +38,7 @@ require('./models/project.model')
 require('./models/page.model')
 require('./models/userImage.model')
 require('./models/mapEditor.model')
+require('./models/notification.model')
 
 /* API */
 const user                      = require('./routes/user')
@@ -58,6 +59,8 @@ const gameRoutes                = require('./routes/game')
 const projectRoutes             = require('./routes/project')
 const pageRoutes                = require('./routes/page')
 const mapEditorRoutes           = require('./routes/mapEditor')
+const notificationRoutes        = require('./routes/notification')
+const homeRoutes                = require('./routes/home')
 
 const app    = express()
 const server = http.createServer(app)
@@ -179,4 +182,6 @@ app.use('/portfolio', portfolio);
 app.use('/game', gameRoutes);
 app.use('/project', projectRoutes);
 app.use('/page', pageRoutes);
-app.use('/gaming/map-editor', mapEditorRoutes);
+app.use('/deadzone/map-editor', mapEditorRoutes);
+app.use('/notification', notificationRoutes);
+app.use('/home', homeRoutes);

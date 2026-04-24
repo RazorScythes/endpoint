@@ -10,7 +10,9 @@ const budgetCategorySchema = new Schema({
     icon: { type: String, default: '' },
     color: { type: String, default: '#3b82f6' },
     type: { type: String, enum: ['expense', 'income'], default: 'expense' },
-    budget: { type: Number, default: 0 }
+    budget: { type: Number, default: 0 },
+    rollover: { type: Boolean, default: false },
+    sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 },{
     timestamps: true,
     collection: "budgetCategories"

@@ -18,6 +18,7 @@ router.post('/login', auth.allowCors(user.login));
 router.post('/register', auth.allowCors(user.register));
 router.post('/googleLogin', auth.allowCors(user.googleLogin));
 router.post('/updateProfile', auth.authenticateToken, auth.userRequired, auth.allowCors(user.updateProfile));
+router.post('/changePassword', auth.authenticateToken, auth.userRequired, auth.allowCors(user.changePassword));
 router.post('/banUser', auth.authenticateToken, auth.userRequired, auth.moderatorAccess, auth.allowCors(user.banUser));
 router.post('/updateSettings', auth.authenticateToken, auth.userRequired, auth.allowCors(user.updateSettings));
 router.post('/sendVerificationEmail', auth.authenticateToken, auth.userRequired, auth.allowCors(user.sendVerificationEmail));
