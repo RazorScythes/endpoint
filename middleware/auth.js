@@ -27,6 +27,17 @@ exports.authenticateToken = async (req, res, next) => {
     }
 }
 
+exports.optionalAuth = async (req, res, next) => {
+    const header = req.headers['authorization'];
+    const token = header?.split(' ')[1];
+    if (token) {
+        try {
+            req.token = jwt.verify(token, process.env.SECRET_KEY);
+        } catch { /* token invalid — proceed as guest */ }
+    }
+    next();
+}
+
 exports.adminAccess = async (req, res, next) => {
     const role = req.token.role
 

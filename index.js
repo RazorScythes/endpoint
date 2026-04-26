@@ -39,6 +39,11 @@ require('./models/page.model')
 require('./models/userImage.model')
 require('./models/mapEditor.model')
 require('./models/notification.model')
+require('./models/community.model')
+require('./models/forumPost.model')
+require('./models/forumComment.model')
+require('./models/forumVote.model')
+require('./models/communityBan.model')
 
 /* API */
 const user                      = require('./routes/user')
@@ -61,6 +66,9 @@ const pageRoutes                = require('./routes/page')
 const mapEditorRoutes           = require('./routes/mapEditor')
 const notificationRoutes        = require('./routes/notification')
 const homeRoutes                = require('./routes/home')
+const communityRoutes           = require('./routes/community')
+const forumRoutes               = require('./routes/forum')
+const blobStorageRoutes         = require('./routes/blobStorage')
 
 const app    = express()
 const server = http.createServer(app)
@@ -108,6 +116,22 @@ io.on('connection', (socket) => {
 
     socket.on('stop_typing', ({ conversationId, recipientId }) => {
         io.to(`user:${recipientId}`).emit('stop_typing', { conversationId })
+    })
+
+    socket.on('join_community', (communityId) => {
+        socket.join(`community:${communityId}`)
+    })
+
+    socket.on('leave_community', (communityId) => {
+        socket.leave(`community:${communityId}`)
+    })
+
+    socket.on('join_post', (postId) => {
+        socket.join(`post:${postId}`)
+    })
+
+    socket.on('leave_post', (postId) => {
+        socket.leave(`post:${postId}`)
     })
 
     socket.on('disconnect', () => {})
@@ -185,3 +209,6 @@ app.use('/page', pageRoutes);
 app.use('/deadzone/map-editor', mapEditorRoutes);
 app.use('/notification', notificationRoutes);
 app.use('/home', homeRoutes);
+app.use('/community', communityRoutes);
+app.use('/forum', forumRoutes);
+app.use('/blob-storage', blobStorageRoutes);

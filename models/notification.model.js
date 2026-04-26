@@ -15,7 +15,7 @@ const schema = Schema({
     referenceId: { type: Schema.Types.ObjectId },
     referenceModel: {
         type: String,
-        enum: ['Video', 'Game', 'Project', 'Comment', 'User', '']
+        enum: ['Video', 'Game', 'Project', 'Comment', 'User', 'ForumPost', 'ForumComment', 'Community', '']
     },
 }, {
     timestamps: true
