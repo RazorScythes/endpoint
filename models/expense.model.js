@@ -17,6 +17,7 @@ const expenseSchema = new Schema({
     paymentMethod: { type: String, default: 'Cash' },
     notes: { type: String, default: '' },
     currency: { type: String, default: 'PHP' },
+    listOnly: { type: Boolean, default: false },
     attachments: [{ type: String }],
     isRecurring: { type: Boolean, default: false },
     recurrenceRule: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', ''], default: '' },

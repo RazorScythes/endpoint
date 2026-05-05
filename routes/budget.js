@@ -31,6 +31,8 @@ router.patch('/expense', auth.authenticateToken, auth.userRequired, auth.allowCo
 router.delete('/expense/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteExpense))
 router.post('/expenses/bulkDelete', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.bulkDeleteExpenses))
 router.patch('/expenses/bulkCategory', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.bulkUpdateCategory))
+router.patch('/expenses/bulkCurrency', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.bulkUpdateCurrency))
+router.post('/receipt/delete', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteReceipt))
 
 // SAVINGS
 router.get('/savings', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getSavings))
@@ -52,6 +54,11 @@ router.get('/lists', auth.authenticateToken, auth.userRequired, auth.allowCors(b
 router.post('/list', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createBudgetList))
 router.patch('/list', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.updateBudgetList))
 router.delete('/list/:id', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.deleteBudgetList))
+
+// EXCHANGE RATES
+router.get('/exchange-rates', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getExchangeRates))
+router.post('/exchange-rates', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.saveExchangeRates))
+router.post('/exchange-rates/reset', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.resetExchangeRates))
 
 // FINANCIAL GOALS
 router.get('/goals', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getGoals))

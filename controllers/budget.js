@@ -1,3 +1,4 @@
+const { del } = require('@vercel/blob')
 const BudgetCategory = require('../models/budgetCategory.model')
 const Expense = require('../models/expense.model')
 const Savings = require('../models/savings.model')
@@ -5,6 +6,7 @@ const SavingsHistory = require('../models/savingsHistory.model')
 const Debt = require('../models/debt.model')
 const BudgetList = require('../models/budgetList.model')
 const FinancialGoal = require('../models/financialGoal.model')
+const ExchangeRate = require('../models/exchangeRate.model')
 
 function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -142,7 +144,7 @@ exports.getExpenses = async (req, res) => {
 exports.createExpense = async (req, res) => {
     try {
         const userId = req.token.id
-        const { date, category, type, paymentMethod, notes, items, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd } = req.body
+        const { date, category, type, paymentMethod, notes, items, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
 
         if (items && Array.isArray(items) && items.length > 0) {
             const valid = items.filter(i => i.description && i.amount)
@@ -158,6 +160,8 @@ exports.createExpense = async (req, res) => {
                 paymentMethod: paymentMethod || 'Cash',
                 notes: notes || '',
                 currency: currency || 'PHP',
+                listOnly: !!listOnly,
+                attachments: Array.isArray(attachments) ? attachments : [],
                 isRecurring: !!isRecurring,
                 recurrenceRule: recurrenceRule || '',
                 recurrenceEnd: recurrenceEnd || null,
@@ -169,7 +173,8 @@ exports.createExpense = async (req, res) => {
             await new Expense({
                 user: userId, date: date || new Date(), description, category: category || null,
                 amount, type: type || 'expense', paymentMethod: paymentMethod || 'Cash', notes,
-                currency: currency || 'PHP',
+                currency: currency || 'PHP', listOnly: !!listOnly,
+                attachments: Array.isArray(attachments) ? attachments : [],
                 isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
             }).save()
         }
@@ -186,11 +191,12 @@ exports.createExpense = async (req, res) => {
 exports.updateExpense = async (req, res) => {
     try {
         const userId = req.token.id
-        const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd } = req.body
+        const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
 
         await Expense.findOneAndUpdate({ _id: id, user: userId }, {
             date, description, category: category || null, amount, type, paymentMethod, notes,
-            currency: currency || 'PHP',
+            currency: currency || 'PHP', listOnly: !!listOnly,
+            attachments: Array.isArray(attachments) ? attachments : [],
             isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
         })
 
@@ -255,6 +261,28 @@ exports.bulkUpdateCategory = async (req, res) => {
         return res.status(200).json({
             result: expenses,
             alert: { variant: 'success', message: `${ids.length} transaction${ids.length !== 1 ? 's' : ''} updated` }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.bulkUpdateCurrency = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { ids, currency, month, year } = req.body
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ alert: { variant: 'danger', message: 'No items selected' } })
+        }
+
+        await Expense.updateMany({ _id: { $in: ids }, user: userId }, { currency: currency || 'PHP' })
+        const expenses = await fetchExpenses(userId, month, year)
+
+        return res.status(200).json({
+            result: expenses,
+            alert: { variant: 'success', message: `${ids.length} transaction${ids.length !== 1 ? 's' : ''} currency updated` }
         })
     } catch (err) {
         console.log(err)
@@ -346,24 +374,28 @@ exports.getDashboard = async (req, res) => {
         const paymentMethodTotals = {}
 
         expenses.forEach(e => {
-            if (e.type === 'income') totalIncome += e.amount
-            else totalExpenses += e.amount
+            if (!e.listOnly) {
+                if (e.type === 'income') totalIncome += e.amount
+                else totalExpenses += e.amount
+            }
 
-            if (e.type === 'expense') {
+            if (e.type === 'expense' && !e.listOnly) {
                 const catName = e.category?.name || 'Uncategorized'
                 const catColor = e.category?.color || '#94a3b8'
                 if (!categoryTotals[catName]) categoryTotals[catName] = { amount: 0, color: catColor, budget: e.category?.budget || 0 }
                 categoryTotals[catName].amount += e.amount
             }
 
-            const day = new Date(e.date).getDate()
-            if (!dailyTotals[day]) dailyTotals[day] = { income: 0, expense: 0 }
-            if (e.type === 'income') dailyTotals[day].income += e.amount
-            else dailyTotals[day].expense += e.amount
+            if (!e.listOnly) {
+                const day = new Date(e.date).getDate()
+                if (!dailyTotals[day]) dailyTotals[day] = { income: 0, expense: 0 }
+                if (e.type === 'income') dailyTotals[day].income += e.amount
+                else dailyTotals[day].expense += e.amount
 
-            const pm = e.paymentMethod || 'Cash'
-            if (!paymentMethodTotals[pm]) paymentMethodTotals[pm] = 0
-            paymentMethodTotals[pm] += e.type === 'expense' ? e.amount : 0
+                const pm = e.paymentMethod || 'Cash'
+                if (!paymentMethodTotals[pm]) paymentMethodTotals[pm] = 0
+                paymentMethodTotals[pm] += e.type === 'expense' ? e.amount : 0
+            }
         })
 
         const totalBudget = categories.filter(c => c.type === 'expense').reduce((sum, c) => sum + (c.budget || 0), 0)
@@ -838,5 +870,107 @@ exports.addGoalContribution = async (req, res) => {
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to add contribution' } })
+    }
+}
+
+// ==================== EXCHANGE RATES ====================
+
+let cachedLiveRates = null
+let cacheTimestamp = 0
+const CACHE_TTL = 6 * 60 * 60 * 1000 // 6 hours
+
+async function fetchLiveRates() {
+    if (cachedLiveRates && Date.now() - cacheTimestamp < CACHE_TTL) return cachedLiveRates
+    try {
+        const res = await fetch('https://open.er-api.com/v6/latest/PHP')
+        const data = await res.json()
+        if (data.result === 'success' && data.rates) {
+            cachedLiveRates = data.rates
+            cacheTimestamp = Date.now()
+            return data.rates
+        }
+    } catch (err) {
+        console.log('Failed to fetch live exchange rates:', err.message)
+    }
+    return cachedLiveRates || null
+}
+
+exports.getExchangeRates = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const saved = await ExchangeRate.findOne({ user: userId }).lean()
+        const liveRates = await fetchLiveRates()
+        return res.status(200).json({
+            result: {
+                rates: saved?.rates || null,
+                baseCurrency: saved?.baseCurrency || 'PHP',
+                liveRates: liveRates || {},
+            }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.saveExchangeRates = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { rates, baseCurrency } = req.body
+
+        const update = { rates: rates || {} }
+        if (baseCurrency) update.baseCurrency = baseCurrency
+
+        await ExchangeRate.findOneAndUpdate(
+            { user: userId },
+            update,
+            { upsert: true, new: true }
+        )
+
+        return res.status(200).json({
+            result: { rates: rates || {}, baseCurrency: baseCurrency || 'PHP' },
+            alert: { variant: 'success', message: 'Exchange rates saved' }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.resetExchangeRates = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const liveRates = await fetchLiveRates()
+
+        if (!liveRates) {
+            return res.status(503).json({ alert: { variant: 'danger', message: 'Unable to fetch current exchange rates. Try again later.' } })
+        }
+
+        await ExchangeRate.findOneAndUpdate(
+            { user: userId },
+            { rates: {} },
+            { upsert: true }
+        )
+
+        return res.status(200).json({
+            result: { rates: null, liveRates },
+            alert: { variant: 'success', message: 'Rates reset to current exchange rates' }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
+    }
+}
+
+exports.deleteReceipt = async (req, res) => {
+    try {
+        const { url } = req.body
+        if (!url || typeof url !== 'string') return res.status(400).json({ alert: { variant: 'danger', message: 'URL is required' } })
+        if (!url.includes('vercel-storage')) return res.status(400).json({ alert: { variant: 'danger', message: 'Invalid blob URL' } })
+        await del(url)
+        return res.status(200).json({ result: true, alert: { variant: 'success', message: 'Receipt deleted' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(200).json({ result: true })
     }
 }
