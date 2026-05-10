@@ -18,6 +18,8 @@ const budgetCategorySchema = new Schema({
     collection: "budgetCategories"
 })
 
+budgetCategorySchema.index({ user: 1 })
+
 const BudgetCategory = mongoose.model('BudgetCategory', budgetCategorySchema)
 
 module.exports = BudgetCategory

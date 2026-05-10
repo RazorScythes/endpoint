@@ -15,6 +15,13 @@ const exchangeRateSchema = new Schema({
         type: Map,
         of: Number,
         default: {}
+    },
+    budgetSettings: {
+        paymentMethods: { type: [String], default: [] },
+        numberFormat: { type: String, default: 'en-PH' },
+        dateFormat: { type: String, default: 'en-US' },
+        decimalPlaces: { type: Number, default: 2 },
+        startOfWeek: { type: String, default: 'monday' },
     }
 },{
     timestamps: true,

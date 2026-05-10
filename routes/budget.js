@@ -60,6 +60,9 @@ router.get('/exchange-rates', auth.authenticateToken, auth.userRequired, auth.al
 router.post('/exchange-rates', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.saveExchangeRates))
 router.post('/exchange-rates/reset', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.resetExchangeRates))
 
+// BUDGET SETTINGS
+router.post('/settings', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.saveBudgetSettings))
+
 // FINANCIAL GOALS
 router.get('/goals', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getGoals))
 router.post('/goal', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.createGoal))

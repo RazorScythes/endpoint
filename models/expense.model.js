@@ -28,6 +28,11 @@ const expenseSchema = new Schema({
     collection: "expenses"
 })
 
+expenseSchema.index({ user: 1, date: -1 })
+expenseSchema.index({ user: 1, category: 1 })
+expenseSchema.index({ user: 1, isRecurring: 1 })
+expenseSchema.index({ user: 1, recurrenceParentId: 1, date: -1 })
+
 const Expense = mongoose.model('Expense', expenseSchema)
 
 module.exports = Expense

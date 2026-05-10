@@ -13,7 +13,12 @@ function escapeRegex(str) {
 }
 
 function dateFilter(month, year) {
-    if (!month || !year) return {}
+    if (!year) return {}
+    if (!month) {
+        const start = new Date(year, 0, 1)
+        const end = new Date(year, 11, 31, 23, 59, 59, 999)
+        return { $gte: start, $lte: end }
+    }
     const start = new Date(year, month - 1, 1)
     const end = new Date(year, month, 0, 23, 59, 59, 999)
     return { $gte: start, $lte: end }
@@ -146,6 +151,11 @@ exports.createExpense = async (req, res) => {
         const userId = req.token.id
         const { date, category, type, paymentMethod, notes, items, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
 
+        if (category) {
+            const cat = await BudgetCategory.findOne({ _id: category, $or: [{ user: userId }, { sharedWith: userId }] }).lean()
+            if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
+        }
+
         if (items && Array.isArray(items) && items.length > 0) {
             const valid = items.filter(i => i.description && i.amount)
             if (valid.length === 0) return res.status(400).json({ alert: { variant: 'danger', message: 'At least one item with description and amount is required' } })
@@ -192,6 +202,11 @@ exports.updateExpense = async (req, res) => {
     try {
         const userId = req.token.id
         const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
+
+        if (category) {
+            const cat = await BudgetCategory.findOne({ _id: category, $or: [{ user: userId }, { sharedWith: userId }] }).lean()
+            if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
+        }
 
         await Expense.findOneAndUpdate({ _id: id, user: userId }, {
             date, description, category: category || null, amount, type, paymentMethod, notes,
@@ -468,13 +483,24 @@ exports.processRecurring = async (req, res) => {
 
             while (nextDate <= now) {
                 if (tpl.recurrenceEnd && nextDate > new Date(tpl.recurrenceEnd)) break
-                await new Expense({
-                    user: userId, date: new Date(nextDate), description: tpl.description,
-                    category: tpl.category, amount: tpl.amount, type: tpl.type,
-                    paymentMethod: tpl.paymentMethod, notes: tpl.notes, currency: tpl.currency || 'PHP',
+                const dateStart = new Date(nextDate)
+                dateStart.setHours(0, 0, 0, 0)
+                const dateEnd = new Date(nextDate)
+                dateEnd.setHours(23, 59, 59, 999)
+                const existing = await Expense.findOne({
+                    user: userId,
                     recurrenceParentId: tpl._id,
-                }).save()
-                created++
+                    date: { $gte: dateStart, $lte: dateEnd }
+                }).lean()
+                if (!existing) {
+                    await new Expense({
+                        user: userId, date: new Date(nextDate), description: tpl.description,
+                        category: tpl.category, amount: tpl.amount, type: tpl.type,
+                        paymentMethod: tpl.paymentMethod, notes: tpl.notes, currency: tpl.currency || 'PHP',
+                        recurrenceParentId: tpl._id,
+                    }).save()
+                    created++
+                }
                 if (rule === 'daily') nextDate.setDate(nextDate.getDate() + 1)
                 else if (rule === 'weekly') nextDate.setDate(nextDate.getDate() + 7)
                 else if (rule === 'biweekly') nextDate.setDate(nextDate.getDate() + 14)
@@ -905,6 +931,7 @@ exports.getExchangeRates = async (req, res) => {
                 rates: saved?.rates || null,
                 baseCurrency: saved?.baseCurrency || 'PHP',
                 liveRates: liveRates || {},
+                budgetSettings: saved?.budgetSettings || null,
             }
         })
     } catch (err) {
@@ -971,6 +998,24 @@ exports.deleteReceipt = async (req, res) => {
         return res.status(200).json({ result: true, alert: { variant: 'success', message: 'Receipt deleted' } })
     } catch (err) {
         console.log(err)
-        return res.status(200).json({ result: true })
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to delete receipt' } })
+    }
+}
+
+exports.saveBudgetSettings = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { budgetSettings } = req.body
+        if (!budgetSettings) return res.status(400).json({ alert: { variant: 'danger', message: 'Settings data required' } })
+
+        await ExchangeRate.findOneAndUpdate(
+            { user: userId },
+            { $set: { budgetSettings } },
+            { upsert: true, new: true }
+        )
+        return res.status(200).json({ result: { budgetSettings }, alert: { variant: 'success', message: 'Settings saved' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to save settings' } })
     }
 }
