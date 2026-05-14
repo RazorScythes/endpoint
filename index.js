@@ -135,6 +135,14 @@ io.on('connection', (socket) => {
         socket.leave(`post:${postId}`)
     })
 
+    socket.on('join_budget', (userId) => {
+        socket.join(`budget:${userId}`)
+    })
+
+    socket.on('leave_budget', (userId) => {
+        socket.leave(`budget:${userId}`)
+    })
+
     socket.on('disconnect', () => {})
 })
 

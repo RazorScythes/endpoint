@@ -17,7 +17,8 @@ const debtSchema = new Schema({
     payments: [{
         amount: { type: Number, required: true },
         date: { type: Date, default: Date.now },
-        notes: { type: String, default: '' }
+        notes: { type: String, default: '' },
+        expenseId: { type: Schema.Types.ObjectId, ref: 'Expense', default: null }
     }]
 }, {
     timestamps: true,

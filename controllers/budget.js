@@ -66,6 +66,9 @@ exports.createCategory = async (req, res) => {
         await new BudgetCategory({ user: userId, name, icon: icon || '', color, type, budget: budget || 0, rollover: !!rollover }).save()
         const categories = await fetchCategories(userId)
 
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_categories_updated', { result: categories, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category created' } })
     } catch (err) {
         console.log(err)
@@ -78,8 +81,12 @@ exports.updateCategory = async (req, res) => {
         const userId = req.budgetUserId || req.token.id
         const { id, name, icon, color, type, budget, rollover } = req.body
 
-        await BudgetCategory.findOneAndUpdate({ _id: id, user: userId }, { name, icon, color, type, budget, rollover: !!rollover })
+        const updated = await BudgetCategory.findOneAndUpdate({ _id: id, user: userId }, { name, icon, color, type, budget, rollover: !!rollover })
+        if (!updated) return res.status(404).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
         const categories = await fetchCategories(userId)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_categories_updated', { result: categories, userId, actorId: req.token.id })
 
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category updated' } })
     } catch (err) {
@@ -96,6 +103,9 @@ exports.deleteCategory = async (req, res) => {
         await Expense.updateMany({ user: userId, category: id }, { $unset: { category: '' } })
         await BudgetCategory.findOneAndDelete({ _id: id, user: userId })
         const categories = await fetchCategories(userId)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_categories_updated', { result: categories, userId, actorId: req.token.id })
 
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'Category deleted' } })
     } catch (err) {
@@ -125,6 +135,10 @@ exports.shareCategory = async (req, res) => {
         }
 
         const categories = await fetchCategories(userId)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_categories_updated', { result: categories, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: `Category shared with ${targetUser.username}` } })
     } catch (err) {
         console.log(err)
@@ -139,6 +153,10 @@ exports.unshareCategory = async (req, res) => {
 
         await BudgetCategory.findOneAndUpdate({ _id: id, user: userId }, { $pull: { sharedWith: targetUserId } })
         const categories = await fetchCategories(userId)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_categories_updated', { result: categories, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: categories, alert: { variant: 'success', message: 'User removed from shared category' } })
     } catch (err) {
         console.log(err)
@@ -171,8 +189,8 @@ exports.createExpense = async (req, res) => {
         }
 
         if (items && Array.isArray(items) && items.length > 0) {
-            const valid = items.filter(i => i.description && i.amount)
-            if (valid.length === 0) return res.status(400).json({ alert: { variant: 'danger', message: 'At least one item with description and amount is required' } })
+            const valid = items.filter(i => i.description && !isNaN(parseFloat(i.amount)))
+            if (valid.length === 0) return res.status(400).json({ alert: { variant: 'danger', message: 'At least one item with description and valid amount is required' } })
 
             const docs = valid.map(i => ({
                 user: userId,
@@ -193,10 +211,11 @@ exports.createExpense = async (req, res) => {
             await Expense.insertMany(docs)
         } else {
             const { description, amount } = req.body
-            if (!description || !amount) return res.status(400).json({ alert: { variant: 'danger', message: 'Description and amount are required' } })
+            const parsedAmt = parseFloat(amount)
+            if (!description || isNaN(parsedAmt)) return res.status(400).json({ alert: { variant: 'danger', message: 'Description and valid amount are required' } })
             await new Expense({
                 user: userId, date: date || new Date(), description, category: category || null,
-                amount, type: type || 'expense', paymentMethod: paymentMethod || 'Cash', notes,
+                amount: parsedAmt, type: type || 'expense', paymentMethod: paymentMethod || 'Cash', notes,
                 currency: currency || 'PHP', listOnly: !!listOnly,
                 attachments: Array.isArray(attachments) ? attachments : [],
                 isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
@@ -205,6 +224,10 @@ exports.createExpense = async (req, res) => {
 
         const count = items ? items.filter(i => i.description && i.amount).length : 1
         const expenses = await fetchExpenses(userId, month, year)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: expenses, alert: { variant: 'success', message: `${count} transaction${count !== 1 ? 's' : ''} added` } })
     } catch (err) {
         console.log(err)
@@ -217,19 +240,27 @@ exports.updateExpense = async (req, res) => {
         const userId = req.budgetUserId || req.token.id
         const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
 
+        const parsedAmount = parseFloat(amount)
+        if (!description || isNaN(parsedAmount)) return res.status(400).json({ alert: { variant: 'danger', message: 'Description and valid amount are required' } })
+
         if (category) {
             const cat = await BudgetCategory.findOne({ _id: category, $or: [{ user: userId }, { sharedWith: userId }] }).lean()
             if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
         }
 
-        await Expense.findOneAndUpdate({ _id: id, user: userId }, {
-            date, description, category: category || null, amount, type, paymentMethod, notes,
+        const updated = await Expense.findOneAndUpdate({ _id: id, user: userId }, {
+            date, description, category: category || null, amount: parsedAmount, type, paymentMethod, notes,
             currency: currency || 'PHP', listOnly: !!listOnly,
             attachments: Array.isArray(attachments) ? attachments : [],
             isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
         })
+        if (!updated) return res.status(404).json({ alert: { variant: 'danger', message: 'Transaction not found' } })
 
         const expenses = await fetchExpenses(userId, month, year)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: expenses, alert: { variant: 'success', message: 'Transaction updated' } })
     } catch (err) {
         console.log(err)
@@ -243,9 +274,14 @@ exports.deleteExpense = async (req, res) => {
         const { id } = req.params
         const { month, year } = req.query
 
-        await Expense.findOneAndDelete({ _id: id, user: userId })
+        const deleted = await Expense.findOneAndDelete({ _id: id, user: userId })
+        if (!deleted) return res.status(404).json({ alert: { variant: 'danger', message: 'Transaction not found' } })
 
         const expenses = await fetchExpenses(userId, month, year)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: expenses, alert: { variant: 'success', message: 'Transaction deleted' } })
     } catch (err) {
         console.log(err)
@@ -262,12 +298,15 @@ exports.bulkDeleteExpenses = async (req, res) => {
             return res.status(400).json({ alert: { variant: 'danger', message: 'No items selected' } })
         }
 
-        const result = await Expense.deleteMany({ _id: { $in: ids }, user: userId })
+        const delResult = await Expense.deleteMany({ _id: { $in: ids }, user: userId })
         const expenses = await fetchExpenses(userId, month, year)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
 
         return res.status(200).json({
             result: expenses,
-            alert: { variant: 'success', message: `${result.deletedCount} transaction${result.deletedCount !== 1 ? 's' : ''} deleted` }
+            alert: { variant: 'success', message: `${delResult.deletedCount} transaction${delResult.deletedCount !== 1 ? 's' : ''} deleted` }
         })
     } catch (err) {
         console.log(err)
@@ -284,8 +323,16 @@ exports.bulkUpdateCategory = async (req, res) => {
             return res.status(400).json({ alert: { variant: 'danger', message: 'No items selected' } })
         }
 
+        if (category) {
+            const cat = await BudgetCategory.findOne({ _id: category, $or: [{ user: userId }, { sharedWith: userId }] }).lean()
+            if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
+        }
+
         await Expense.updateMany({ _id: { $in: ids }, user: userId }, { category: category || null })
         const expenses = await fetchExpenses(userId, month, year)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
 
         return res.status(200).json({
             result: expenses,
@@ -308,6 +355,9 @@ exports.bulkUpdateCurrency = async (req, res) => {
 
         await Expense.updateMany({ _id: { $in: ids }, user: userId }, { currency: currency || 'PHP' })
         const expenses = await fetchExpenses(userId, month, year)
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
 
         return res.status(200).json({
             result: expenses,
@@ -342,8 +392,6 @@ exports.searchExpenses = async (req, res) => {
 
 // ==================== CSV IMPORT ====================
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
 exports.importCSV = async (req, res) => {
     try {
         const userId = req.budgetUserId || req.token.id
@@ -353,7 +401,14 @@ exports.importCSV = async (req, res) => {
             return res.status(400).json({ alert: { variant: 'danger', message: 'No data to import' } })
         }
 
-        const docs = rows.filter(r => r.description && r.amount).map(r => ({
+        if (rows.some(r => r.category)) {
+            const catIds = [...new Set(rows.filter(r => r.category).map(r => r.category))]
+            const validCats = await BudgetCategory.find({ _id: { $in: catIds }, $or: [{ user: userId }, { sharedWith: userId }] }).select('_id').lean()
+            const validCatIds = new Set(validCats.map(c => c._id.toString()))
+            rows.forEach(r => { if (r.category && !validCatIds.has(r.category)) r.category = null })
+        }
+
+        const docs = rows.filter(r => r.description && !isNaN(parseFloat(r.amount))).map(r => ({
             user: userId,
             date: r.date ? new Date(r.date) : new Date(),
             description: r.description,
@@ -370,6 +425,9 @@ exports.importCSV = async (req, res) => {
         await Expense.insertMany(docs)
         const expenses = await fetchExpenses(userId, month, year)
 
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
+
         return res.status(200).json({
             result: expenses,
             alert: { variant: 'success', message: `Imported ${docs.length} transaction${docs.length !== 1 ? 's' : ''}` }
@@ -377,6 +435,111 @@ exports.importCSV = async (req, res) => {
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Import failed' } })
+    }
+}
+
+// ==================== INITIAL LOAD (BATCHED) ====================
+
+exports.getInitialLoad = async (req, res) => {
+    try {
+        const userId = req.budgetUserId || req.token.id
+        const { month, year } = req.query
+        const m = parseInt(month) || new Date().getMonth() + 1
+        const y = parseInt(year) || new Date().getFullYear()
+
+        const start = new Date(y, m - 1, 1)
+        const end = new Date(y, m, 0, 23, 59, 59, 999)
+
+        const [
+            allExpenses,
+            categories,
+            savings,
+            debts,
+            lists,
+            goals,
+            exchangeRateDoc,
+            liveRates,
+        ] = await Promise.all([
+            Expense.find({ user: userId, date: { $gte: start, $lte: end } }).populate('category', 'name icon color type budget rollover').sort({ date: -1 }).lean(),
+            fetchCategories(userId),
+            Savings.findOne({ user: userId }).lean(),
+            Debt.find({ user: userId }).sort({ createdAt: -1 }).lean(),
+            BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean(),
+            FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean(),
+            ExchangeRate.findOne({ user: userId }).lean(),
+            fetchLiveRates(),
+        ])
+
+        let totalIncome = 0, totalExpenses = 0
+        const categoryTotals = {}, dailyTotals = {}, paymentMethodTotals = {}
+
+        allExpenses.forEach(e => {
+            if (!e.listOnly) {
+                if (e.type === 'income') totalIncome += e.amount
+                else totalExpenses += e.amount
+            }
+            if (e.type === 'expense' && !e.listOnly) {
+                const catName = e.category?.name || 'Uncategorized'
+                const catColor = e.category?.color || '#94a3b8'
+                if (!categoryTotals[catName]) categoryTotals[catName] = { amount: 0, color: catColor, budget: e.category?.budget || 0 }
+                categoryTotals[catName].amount += e.amount
+            }
+            if (!e.listOnly) {
+                const day = new Date(e.date).getDate()
+                if (!dailyTotals[day]) dailyTotals[day] = { income: 0, expense: 0 }
+                if (e.type === 'income') dailyTotals[day].income += e.amount
+                else dailyTotals[day].expense += e.amount
+                const pm = e.paymentMethod || 'Cash'
+                if (!paymentMethodTotals[pm]) paymentMethodTotals[pm] = 0
+                paymentMethodTotals[pm] += e.type === 'expense' ? e.amount : 0
+            }
+        })
+
+        const totalBudget = categories.filter(c => c.type === 'expense').reduce((sum, c) => sum + (c.budget || 0), 0)
+
+        let rolloverAmount = 0
+        const rolloverCats = categories.filter(c => c.type === 'expense' && c.rollover && c.budget > 0)
+        if (rolloverCats.length > 0) {
+            const prevStart = new Date(y, m - 2, 1)
+            const prevEnd = new Date(y, m - 1, 0, 23, 59, 59, 999)
+            const prevExpenses = await Expense.find({ user: userId, date: { $gte: prevStart, $lte: prevEnd } }).populate('category', 'name').lean()
+            for (const cat of rolloverCats) {
+                const prevSpent = prevExpenses.filter(e => e.type === 'expense' && e.category?.name === cat.name).reduce((s, e) => s + e.amount, 0)
+                rolloverAmount += Math.max(0, cat.budget - prevSpent)
+            }
+        }
+
+        const topCategories = Object.entries(categoryTotals)
+            .filter(([_, v]) => v.amount > 0)
+            .sort((a, b) => b[1].amount - a[1].amount)
+            .slice(0, 5)
+            .map(([name, data]) => ({ name, ...data }))
+
+        return res.status(200).json({
+            result: {
+                dashboard: {
+                    totalIncome, totalExpenses, balance: totalIncome - totalExpenses,
+                    totalBudget, remainingBudget: totalBudget - totalExpenses + rolloverAmount,
+                    rolloverAmount, topCategories, dailyTotals, paymentMethodTotals,
+                    transactionCount: allExpenses.length, month: m, year: y
+                },
+                expenses: allExpenses,
+                categories,
+                savings: savings?.denominations || {},
+                debts,
+                lists,
+                goals,
+                exchangeRates: {
+                    rates: exchangeRateDoc?.rates || null,
+                    baseCurrency: exchangeRateDoc?.baseCurrency || 'PHP',
+                    liveRates: liveRates || {},
+                    budgetSettings: exchangeRateDoc?.budgetSettings || null,
+                },
+            }
+        })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Internal server error' } })
     }
 }
 
@@ -522,7 +685,14 @@ exports.processRecurring = async (req, res) => {
             }
         }
 
-        return res.status(200).json({ created, alert: created > 0 ? { variant: 'success', message: `${created} recurring transaction${created !== 1 ? 's' : ''} generated` } : undefined })
+        if (created > 0) {
+            const { month, year } = req.body
+            const expenses = await fetchExpenses(userId, month, year)
+            const io = req.app.get('io')
+            io.to(`budget:${userId}`).emit('budget_expenses_updated', { result: expenses, userId, actorId: req.token.id })
+            return res.status(200).json({ result: expenses, created, alert: { variant: 'success', message: `${created} recurring transaction${created !== 1 ? 's' : ''} generated` } })
+        }
+        return res.status(200).json({ created })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to process recurring transactions' } })
@@ -581,6 +751,9 @@ exports.saveSavings = async (req, res) => {
             { upsert: true, new: true }
         )
 
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_savings_updated', { result: denominations, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: denominations, alert: { variant: 'success', message: 'Savings updated' } })
     } catch (err) {
         console.log(err)
@@ -605,6 +778,10 @@ exports.deleteSavingsHistory = async (req, res) => {
         const { id } = req.params
         await SavingsHistory.deleteOne({ _id: id, user: userId })
         const history = await SavingsHistory.find({ user: userId }).sort({ createdAt: -1 }).limit(50).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_savings_history_updated', { result: history, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: history, alert: { variant: 'success', message: 'History entry deleted' } })
     } catch (err) {
         console.log(err)
@@ -635,6 +812,9 @@ exports.createDebt = async (req, res) => {
         await new Debt({ user: userId, name, type, person, total_amount, due_date: due_date || null, notes }).save()
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
 
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_debts_updated', { result: debts, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Debt created' } })
     } catch (err) {
         console.log(err)
@@ -647,8 +827,12 @@ exports.updateDebt = async (req, res) => {
         const userId = req.budgetUserId || req.token.id
         const { id, name, type, person, total_amount, due_date, notes } = req.body
 
-        await Debt.findOneAndUpdate({ _id: id, user: userId }, { name, type, person, total_amount, due_date: due_date || null, notes })
+        const updated = await Debt.findOneAndUpdate({ _id: id, user: userId }, { name, type, person, total_amount, due_date: due_date || null, notes })
+        if (!updated) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_debts_updated', { result: debts, userId, actorId: req.token.id })
 
         return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Debt updated' } })
     } catch (err) {
@@ -662,8 +846,12 @@ exports.deleteDebt = async (req, res) => {
         const userId = req.budgetUserId || req.token.id
         const { id } = req.params
 
-        await Debt.findOneAndDelete({ _id: id, user: userId })
+        const deleted = await Debt.findOneAndDelete({ _id: id, user: userId })
+        if (!deleted) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_debts_updated', { result: debts, userId, actorId: req.token.id })
 
         return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Debt deleted' } })
     } catch (err) {
@@ -680,18 +868,18 @@ exports.addDebtPayment = async (req, res) => {
 
         if (!amount || amount <= 0) return res.status(400).json({ alert: { variant: 'danger', message: 'Valid amount is required' } })
 
+        if (category) {
+            const cat = await BudgetCategory.findOne({ _id: category, $or: [{ user: userId }, { sharedWith: userId }] }).lean()
+            if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
+        }
+
         const debt = await Debt.findOne({ _id: id, user: userId })
         if (!debt) return res.status(404).json({ alert: { variant: 'danger', message: 'Debt not found' } })
 
         const paymentDate = new Date()
-        debt.payments.push({ amount, notes: notes || '', date: paymentDate })
-        debt.amount_paid = debt.payments.reduce((s, p) => s + p.amount, 0)
-        if (debt.amount_paid >= debt.total_amount) debt.status = 'paid'
-        await debt.save()
-
         const expenseType = debt.type === 'owe' ? 'expense' : 'income'
         const personLabel = debt.person ? ` → ${debt.person}` : ''
-        await new Expense({
+        const expense = await new Expense({
             user: userId,
             date: paymentDate,
             description: `Debt: ${debt.name}${personLabel}`,
@@ -702,7 +890,16 @@ exports.addDebtPayment = async (req, res) => {
             notes: notes || ''
         }).save()
 
+        debt.payments.push({ amount, notes: notes || '', date: paymentDate, expenseId: expense._id })
+        debt.amount_paid = debt.payments.reduce((s, p) => s + p.amount, 0)
+        if (debt.amount_paid >= debt.total_amount) debt.status = 'paid'
+        await debt.save()
+
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_debts_updated', { result: debts, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Payment recorded' } })
     } catch (err) {
         console.log(err)
@@ -720,17 +917,21 @@ exports.removeDebtPayment = async (req, res) => {
 
         const payment = debt.payments.id(paymentId)
         if (payment) {
-            const personLabel = debt.person ? ` → ${debt.person}` : ''
-            const descPattern = `Debt: ${debt.name}${personLabel}`
-            const payDate = new Date(payment.date)
-            const dayStart = new Date(payDate.getFullYear(), payDate.getMonth(), payDate.getDate())
-            const dayEnd = new Date(payDate.getFullYear(), payDate.getMonth(), payDate.getDate() + 1)
-            await Expense.findOneAndDelete({
-                user: userId,
-                description: descPattern,
-                amount: payment.amount,
-                date: { $gte: dayStart, $lt: dayEnd },
-            })
+            if (payment.expenseId) {
+                await Expense.findOneAndDelete({ _id: payment.expenseId, user: userId })
+            } else {
+                const personLabel = debt.person ? ` → ${debt.person}` : ''
+                const descPattern = `Debt: ${debt.name}${personLabel}`
+                const payDate = new Date(payment.date)
+                const dayStart = new Date(payDate.getFullYear(), payDate.getMonth(), payDate.getDate())
+                const dayEnd = new Date(payDate.getFullYear(), payDate.getMonth(), payDate.getDate() + 1)
+                await Expense.findOneAndDelete({
+                    user: userId,
+                    description: descPattern,
+                    amount: payment.amount,
+                    date: { $gte: dayStart, $lt: dayEnd },
+                })
+            }
         }
 
         debt.payments = debt.payments.filter(p => p._id.toString() !== paymentId)
@@ -739,6 +940,10 @@ exports.removeDebtPayment = async (req, res) => {
         await debt.save()
 
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_debts_updated', { result: debts, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: debts, alert: { variant: 'success', message: 'Payment removed' } })
     } catch (err) {
         console.log(err)
@@ -758,7 +963,8 @@ exports.toggleDebtStatus = async (req, res) => {
         if (debt.status === 'active') {
             debt.status = 'paid'
             if (debt.amount_paid < debt.total_amount) {
-                warning = ` (Note: only ${((debt.amount_paid / debt.total_amount) * 100).toFixed(0)}% paid)`
+                const pct = debt.total_amount > 0 ? ((debt.amount_paid / debt.total_amount) * 100).toFixed(0) : 0
+                warning = ` (Note: only ${pct}% paid)`
             }
         } else {
             debt.status = debt.amount_paid >= debt.total_amount ? 'paid' : 'active'
@@ -769,6 +975,10 @@ exports.toggleDebtStatus = async (req, res) => {
         await debt.save()
 
         const debts = await Debt.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_debts_updated', { result: debts, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: debts, alert: { variant: 'success', message: `Debt marked as ${debt.status}${warning}` } })
     } catch (err) {
         console.log(err)
@@ -797,6 +1007,10 @@ exports.createBudgetList = async (req, res) => {
 
         await new BudgetList({ user: userId, name, description: description || '', color: color || '#3b82f6', icon: icon || 'peso-sign', currency: currency || '₱', showCurrency: showCurrency !== false, items: items || [] }).save()
         const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_lists_updated', { result: lists, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: lists, alert: { variant: 'success', message: 'List created' } })
     } catch (err) {
         console.log(err)
@@ -815,6 +1029,10 @@ exports.updateBudgetList = async (req, res) => {
             { $set: { name, description, color, icon, currency, showCurrency, items } }
         )
         const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_lists_updated', { result: lists, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: lists, alert: { variant: 'success', message: 'List updated' } })
     } catch (err) {
         console.log(err)
@@ -828,6 +1046,10 @@ exports.deleteBudgetList = async (req, res) => {
         const { id } = req.params
         await BudgetList.findOneAndDelete({ _id: id, user: userId })
         const lists = await BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_lists_updated', { result: lists, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: lists, alert: { variant: 'success', message: 'List deleted' } })
     } catch (err) {
         console.log(err)
@@ -856,6 +1078,10 @@ exports.createGoal = async (req, res) => {
 
         await new FinancialGoal({ user: userId, name, targetAmount, deadline: deadline || null, category: category || null, color: color || '#3b82f6', icon: icon || 'bullseye', notes: notes || '' }).save()
         const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_goals_updated', { result: goals, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Goal created' } })
     } catch (err) {
         console.log(err)
@@ -867,8 +1093,13 @@ exports.updateGoal = async (req, res) => {
     try {
         const userId = req.budgetUserId || req.token.id
         const { id, name, targetAmount, deadline, category, color, icon, notes, status } = req.body
-        await FinancialGoal.findOneAndUpdate({ _id: id, user: userId }, { name, targetAmount, deadline: deadline || null, category: category || null, color, icon, notes, status })
+        const updated = await FinancialGoal.findOneAndUpdate({ _id: id, user: userId }, { name, targetAmount, deadline: deadline || null, category: category || null, color, icon, notes, status })
+        if (!updated) return res.status(404).json({ alert: { variant: 'danger', message: 'Goal not found' } })
         const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_goals_updated', { result: goals, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Goal updated' } })
     } catch (err) {
         console.log(err)
@@ -880,8 +1111,13 @@ exports.deleteGoal = async (req, res) => {
     try {
         const userId = req.budgetUserId || req.token.id
         const { id } = req.params
-        await FinancialGoal.findOneAndDelete({ _id: id, user: userId })
+        const deleted = await FinancialGoal.findOneAndDelete({ _id: id, user: userId })
+        if (!deleted) return res.status(404).json({ alert: { variant: 'danger', message: 'Goal not found' } })
         const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_goals_updated', { result: goals, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Goal deleted' } })
     } catch (err) {
         console.log(err)
@@ -906,10 +1142,42 @@ exports.addGoalContribution = async (req, res) => {
         await goal.save()
 
         const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_goals_updated', { result: goals, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Contribution added' } })
     } catch (err) {
         console.log(err)
         return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to add contribution' } })
+    }
+}
+
+exports.removeGoalContribution = async (req, res) => {
+    try {
+        const userId = req.budgetUserId || req.token.id
+        const { id, contributionId } = req.params
+
+        const goal = await FinancialGoal.findOne({ _id: id, user: userId })
+        if (!goal) return res.status(404).json({ alert: { variant: 'danger', message: 'Goal not found' } })
+
+        const contribution = goal.contributions.id(contributionId)
+        if (!contribution) return res.status(404).json({ alert: { variant: 'danger', message: 'Contribution not found' } })
+
+        await contribution.deleteOne()
+        goal.currentAmount = goal.contributions.reduce((s, c) => s + c.amount, 0)
+        if (goal.currentAmount < goal.targetAmount && goal.status === 'completed') goal.status = 'active'
+        await goal.save()
+
+        const goals = await FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_goals_updated', { result: goals, userId, actorId: req.token.id })
+
+        return res.status(200).json({ result: goals, alert: { variant: 'success', message: 'Contribution removed' } })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { variant: 'danger', message: 'Failed to remove contribution' } })
     }
 }
 
@@ -968,8 +1236,13 @@ exports.saveExchangeRates = async (req, res) => {
             { upsert: true, new: true }
         )
 
+        const result = { rates: rates || {}, baseCurrency: baseCurrency || 'PHP' }
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_settings_updated', { result, userId, actorId: req.token.id })
+
         return res.status(200).json({
-            result: { rates: rates || {}, baseCurrency: baseCurrency || 'PHP' },
+            result,
             alert: { variant: 'success', message: 'Exchange rates saved' }
         })
     } catch (err) {
@@ -993,8 +1266,13 @@ exports.resetExchangeRates = async (req, res) => {
             { upsert: true }
         )
 
+        const result = { rates: null, liveRates }
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_settings_updated', { result, userId, actorId: req.token.id })
+
         return res.status(200).json({
-            result: { rates: null, liveRates },
+            result,
             alert: { variant: 'success', message: 'Rates reset to current exchange rates' }
         })
     } catch (err) {
@@ -1005,9 +1283,14 @@ exports.resetExchangeRates = async (req, res) => {
 
 exports.deleteReceipt = async (req, res) => {
     try {
+        const userId = req.budgetUserId || req.token.id
         const { url } = req.body
         if (!url || typeof url !== 'string') return res.status(400).json({ alert: { variant: 'danger', message: 'URL is required' } })
         if (!url.includes('vercel-storage')) return res.status(400).json({ alert: { variant: 'danger', message: 'Invalid blob URL' } })
+
+        const ownsReceipt = await Expense.findOne({ user: userId, attachments: url }).lean()
+        if (!ownsReceipt) return res.status(403).json({ alert: { variant: 'danger', message: 'Not authorized to delete this receipt' } })
+
         await del(url)
         return res.status(200).json({ result: true, alert: { variant: 'success', message: 'Receipt deleted' } })
     } catch (err) {
@@ -1027,6 +1310,10 @@ exports.saveBudgetSettings = async (req, res) => {
             { $set: { budgetSettings } },
             { upsert: true, new: true }
         )
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_settings_updated', { result: { budgetSettings }, userId, actorId: req.token.id })
+
         return res.status(200).json({ result: { budgetSettings }, alert: { variant: 'success', message: 'Settings saved' } })
     } catch (err) {
         console.log(err)
@@ -1055,6 +1342,11 @@ exports.shareBudget = async (req, res) => {
         await new BudgetShare({ owner: userId, sharedWith: targetUser._id, role: validRole }).save()
 
         const sharedUsers = await BudgetShare.find({ owner: userId }).populate('sharedWith', 'username avatar').lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_sharing_updated', { result: sharedUsers, userId, actorId: req.token.id })
+        io.to(`budget:${targetUser._id.toString()}`).emit('budget_access_changed', { ownerId: userId })
+
         return res.status(200).json({ result: sharedUsers, alert: { variant: 'success', message: `Budget shared with ${targetUser.username} as ${validRole}` } })
     } catch (err) {
         console.log(err)
@@ -1072,6 +1364,11 @@ exports.unshareBudget = async (req, res) => {
         await BudgetShare.findOneAndDelete({ owner: userId, sharedWith: targetUserId })
 
         const sharedUsers = await BudgetShare.find({ owner: userId }).populate('sharedWith', 'username avatar').lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_sharing_updated', { result: sharedUsers, userId, actorId: req.token.id })
+        io.to(`budget:${targetUserId}`).emit('budget_access_changed', { ownerId: userId, revoked: true })
+
         return res.status(200).json({ result: sharedUsers, alert: { variant: 'success', message: 'Budget access revoked' } })
     } catch (err) {
         console.log(err)
@@ -1090,6 +1387,11 @@ exports.updateBudgetShare = async (req, res) => {
         await BudgetShare.findOneAndUpdate({ owner: userId, sharedWith: targetUserId }, { role })
 
         const sharedUsers = await BudgetShare.find({ owner: userId }).populate('sharedWith', 'username avatar').lean()
+
+        const io = req.app.get('io')
+        io.to(`budget:${userId}`).emit('budget_sharing_updated', { result: sharedUsers, userId, actorId: req.token.id })
+        io.to(`budget:${targetUserId}`).emit('budget_access_changed', { ownerId: userId, newRole: role })
+
         return res.status(200).json({ result: sharedUsers, alert: { variant: 'success', message: `Role updated to ${role}` } })
     } catch (err) {
         console.log(err)

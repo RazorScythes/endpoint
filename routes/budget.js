@@ -12,6 +12,9 @@ router.patch('/share', auth.authenticateToken, auth.userRequired, auth.allowCors
 router.get('/shared-with-me', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getSharedBudgets))
 router.get('/shared-users', auth.authenticateToken, auth.userRequired, auth.allowCors(budget.getSharedUsers))
 
+// INITIAL LOAD (batched)
+router.get('/initial-load', auth.authenticateToken, auth.userRequired, budgetPermission, auth.allowCors(budget.getInitialLoad))
+
 // DASHBOARD
 router.get('/dashboard', auth.authenticateToken, auth.userRequired, budgetPermission, auth.allowCors(budget.getDashboard))
 
@@ -77,5 +80,6 @@ router.post('/goal', auth.authenticateToken, auth.userRequired, budgetPermission
 router.patch('/goal', auth.authenticateToken, auth.userRequired, budgetPermission, auth.allowCors(budget.updateGoal))
 router.delete('/goal/:id', auth.authenticateToken, auth.userRequired, budgetPermission, auth.allowCors(budget.deleteGoal))
 router.post('/goal/:id/contribution', auth.authenticateToken, auth.userRequired, budgetPermission, auth.allowCors(budget.addGoalContribution))
+router.delete('/goal/:id/contribution/:contributionId', auth.authenticateToken, auth.userRequired, budgetPermission, auth.allowCors(budget.removeGoalContribution))
 
 module.exports = router
