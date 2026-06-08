@@ -29,4 +29,11 @@ router.get('/tags', auth.allowCors(forum.getForumTags))
 router.get('/search', searchLimiter, auth.allowCors(forum.searchForum))
 router.post('/report', auth.authenticateToken, auth.userRequired, writeLimiter, auth.allowCors(forum.reportContent))
 
+router.post('/posts/:id/save', auth.authenticateToken, auth.userRequired, auth.allowCors(forum.savePost))
+router.delete('/posts/:id/save', auth.authenticateToken, auth.userRequired, auth.allowCors(forum.unsavePost))
+router.get('/saved', auth.authenticateToken, auth.userRequired, auth.allowCors(forum.getSavedPosts))
+
+router.get('/reports', auth.authenticateToken, auth.userRequired, auth.allowCors(forum.getForumReports))
+router.patch('/reports/:id/dismiss', auth.authenticateToken, auth.userRequired, auth.allowCors(forum.dismissReport))
+
 module.exports = router

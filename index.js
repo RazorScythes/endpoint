@@ -122,8 +122,8 @@ io.on('connection', (socket) => {
     socket.on('join_community', async (communityId) => {
         try {
             const Community = require('./models/community.model')
-            const community = await Community.findById(communityId).select('privacy members').lean()
-            if (community?.privacy === 'private') {
+            const community = await Community.findById(communityId).select('isPrivate members').lean()
+            if (community?.isPrivate) {
                 const token = socket.handshake?.auth?.token || socket.handshake?.query?.token
                 if (!token) return
                 const jwt = require('jsonwebtoken')
@@ -132,7 +132,7 @@ io.on('connection', (socket) => {
             }
             socket.join(`community:${communityId}`)
         } catch {
-            socket.join(`community:${communityId}`)
+            // Do not join room on error - deny access
         }
     })
 

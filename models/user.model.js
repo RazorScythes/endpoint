@@ -55,7 +55,8 @@ const schema = Schema({
         verification_token: { type: String },
         verification_time_to_send: { type: String }
     },
-    contribution: { type: Number }
+    contribution: { type: Number },
+    savedPosts: [{ type: Schema.Types.ObjectId, ref: 'ForumPost' }],
 },{
     timestamps: true
 })

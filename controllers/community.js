@@ -61,12 +61,13 @@ exports.getCommunityBySlug = async (req, res) => {
         const community = await Community.findOne({ slug: req.params.slug })
             .populate('creator', 'username avatar')
             .populate('moderators', 'username avatar')
+            .populate('members', 'username avatar')
             .lean()
 
         if (!community) return res.status(404).json({ alert: { message: 'Community not found', variant: 'danger' } })
 
         const userId = req.token?.id
-        const isMember = userId && community.members.some(m => m.toString() === userId)
+        const isMember = userId && community.members.some(m => (m._id || m).toString() === userId)
         const isMod = userId && (community.creator?._id?.toString() === userId || community.moderators?.some(m => (m._id || m).toString() === userId))
         const isAdmin = req.token?.role === 'Admin'
 
@@ -190,8 +191,9 @@ exports.deleteCommunity = async (req, res) => {
         }
 
         const postIds = await ForumPost.find({ community: id }).distinct('_id')
+        const commentIds = await ForumComment.find({ post: { $in: postIds } }).distinct('_id')
+        await ForumVote.deleteMany({ target: { $in: [...postIds, ...commentIds] } })
         await ForumComment.deleteMany({ post: { $in: postIds } })
-        await ForumVote.deleteMany({ target: { $in: [...postIds, ...(await ForumComment.find({ post: { $in: postIds } }).distinct('_id'))] } })
         await ForumPost.deleteMany({ community: id })
         await CommunityBan.deleteMany({ community: id })
         await Community.findByIdAndDelete(id)

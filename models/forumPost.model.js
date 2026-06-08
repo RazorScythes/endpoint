@@ -8,6 +8,7 @@ const schema = Schema({
     community: { type: Schema.Types.ObjectId, ref: 'Community', required: true },
     tags: [{ type: String }],
     images: [{ type: String }],
+    isNSFW: { type: Boolean, default: false },
     isPinned: { type: Boolean, default: false },
     isLocked: { type: Boolean, default: false },
     upvotes: [{ type: Schema.Types.ObjectId, ref: 'User' }],

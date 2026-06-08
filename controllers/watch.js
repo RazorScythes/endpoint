@@ -619,3 +619,19 @@ exports.getRelatedVideos = async (req, res) => {
         return res.status(200).json({ result: [] });
     }
 }
+
+exports.getLikedVideos = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const videos = await Video.find({ likes: userId, privacy: { $ne: true } })
+            .populate({ path: 'user', select: 'username avatar' })
+            .select('title thumbnail duration views likes createdAt user groups')
+            .sort({ createdAt: -1 })
+            .lean()
+
+        return res.status(200).json({ result: videos })
+    } catch (err) {
+        console.log(err)
+        return res.status(500).json({ alert: { message: 'Server error', variant: 'danger' } })
+    }
+}

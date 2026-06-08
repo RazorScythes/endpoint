@@ -4,6 +4,7 @@ const ForumPost = require('../models/forumPost.model')
 const ForumComment = require('../models/forumComment.model')
 const ForumVote = require('../models/forumVote.model')
 const Notification = require('../models/notification.model')
+const User = require('../models/user.model')
 
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -19,15 +20,15 @@ const emitNotification = async (io, notif) => {
 }
 
 const getPrivateCommunityIds = async () => {
-    const privates = await Community.find({ privacy: 'private' }).select('_id').lean()
+    const privates = await Community.find({ isPrivate: true }).select('_id').lean()
     return privates.map(c => c._id)
 }
 
 const canAccessCommunity = async (communityId, userId) => {
     if (!communityId) return true
-    const community = await Community.findById(communityId).select('privacy members').lean()
+    const community = await Community.findById(communityId).select('isPrivate members').lean()
     if (!community) return false
-    if (community.privacy !== 'private') return true
+    if (!community.isPrivate) return true
     if (!userId) return false
     return community.members.some(m => m.toString() === userId)
 }
@@ -126,12 +127,20 @@ exports.getPost = async (req, res) => {
         const userId = req.token?.id
         const post = await ForumPost.findById(req.params.id)
             .populate('author', 'username avatar')
-            .populate('community', 'name slug icon description memberCount moderators creator privacy members')
+            .populate({
+                path: 'community',
+                select: 'name slug icon description memberCount moderators creator isPrivate members',
+                populate: [
+                    { path: 'creator', select: 'username avatar' },
+                    { path: 'moderators', select: 'username avatar' },
+                    { path: 'members', select: 'username avatar' }
+                ]
+            })
 
         if (!post) return res.status(404).json({ alert: { message: 'Post not found', variant: 'danger' } })
 
-        if (post.community?.privacy === 'private') {
-            const isMember = userId && post.community.members?.some(m => m.toString() === userId)
+        if (post.community?.isPrivate) {
+            const isMember = userId && post.community.members?.some(m => (m._id || m).toString() === userId)
             if (!isMember) return res.status(403).json({ alert: { message: 'You do not have access to this post', variant: 'danger' } })
         }
 
@@ -147,7 +156,7 @@ exports.getPost = async (req, res) => {
 exports.createPost = async (req, res) => {
     try {
         const userId = req.token.id
-        const { title, content, communityId, tags, images } = req.body
+        const { title, content, communityId, tags, images, isNSFW } = req.body
 
         if (!title || !title.trim()) return res.status(400).json({ alert: { message: 'Title is required', variant: 'danger' } })
         if (title.length > MAX_TITLE_LENGTH) return res.status(400).json({ alert: { message: `Title cannot exceed ${MAX_TITLE_LENGTH} characters`, variant: 'danger' } })
@@ -174,6 +183,7 @@ exports.createPost = async (req, res) => {
             community: communityId,
             tags: tags || [],
             images: images || [],
+            isNSFW: Boolean(isNSFW),
         })
 
         community.postCount += 1
@@ -214,17 +224,24 @@ exports.updatePost = async (req, res) => {
     try {
         const { id } = req.params
         const userId = req.token.id
-        const { title, content, tags, images } = req.body
+        const { title, content, tags, images, isNSFW } = req.body
 
         const post = await ForumPost.findById(id)
         if (!post) return res.status(404).json({ alert: { message: 'Post not found', variant: 'danger' } })
         if (post.author.toString() !== userId) return res.status(403).json({ alert: { message: 'Unauthorized', variant: 'danger' } })
         if (post.isLocked) return res.status(400).json({ alert: { message: 'Post is locked', variant: 'danger' } })
 
+        if (title !== undefined && (!title || !title.trim())) return res.status(400).json({ alert: { message: 'Title is required', variant: 'danger' } })
+        if (title && title.length > MAX_TITLE_LENGTH) return res.status(400).json({ alert: { message: `Title cannot exceed ${MAX_TITLE_LENGTH} characters`, variant: 'danger' } })
+        if (content && content.length > MAX_CONTENT_LENGTH) return res.status(400).json({ alert: { message: 'Content is too long', variant: 'danger' } })
+        if (tags && tags.length > MAX_TAGS) return res.status(400).json({ alert: { message: `Maximum ${MAX_TAGS} tags allowed`, variant: 'danger' } })
+        if (images && images.length > MAX_IMAGES) return res.status(400).json({ alert: { message: `Maximum ${MAX_IMAGES} images allowed`, variant: 'danger' } })
+
         if (title) post.title = title.trim()
         if (content !== undefined) post.content = content
         if (tags) post.tags = tags
         if (images) post.images = images
+        if (isNSFW !== undefined) post.isNSFW = Boolean(isNSFW)
 
         await post.save()
         const populated = await ForumPost.findById(id).populate('author', 'username avatar').populate('community', 'name slug icon')
@@ -281,7 +298,11 @@ exports.togglePin = async (req, res) => {
         post.isPinned = !post.isPinned
         await post.save()
 
-        res.json({ result: post, alert: { message: post.isPinned ? 'Post pinned' : 'Post unpinned', variant: 'success' } })
+        const populated = await ForumPost.findById(id)
+            .populate('author', 'username avatar')
+            .populate('community', 'name slug icon description memberCount moderators creator isPrivate members')
+
+        res.json({ result: populated, alert: { message: populated.isPinned ? 'Post pinned' : 'Post unpinned', variant: 'success' } })
     } catch (err) {
         res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
     }
@@ -302,7 +323,11 @@ exports.toggleLock = async (req, res) => {
         post.isLocked = !post.isLocked
         await post.save()
 
-        res.json({ result: post, alert: { message: post.isLocked ? 'Post locked' : 'Post unlocked', variant: 'success' } })
+        const populated = await ForumPost.findById(id)
+            .populate('author', 'username avatar')
+            .populate('community', 'name slug icon description memberCount moderators creator isPrivate members')
+
+        res.json({ result: populated, alert: { message: populated.isLocked ? 'Post locked' : 'Post unlocked', variant: 'success' } })
     } catch (err) {
         res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
     }
@@ -312,7 +337,7 @@ exports.votePost = async (req, res) => {
     try {
         const { id } = req.params
         const userId = req.token.id
-        const { value } = req.body
+        const value = Number(req.body.value)
 
         if (![1, -1, 0].includes(value)) return res.status(400).json({ alert: { message: 'Invalid vote', variant: 'danger' } })
 
@@ -544,7 +569,7 @@ exports.voteComment = async (req, res) => {
     try {
         const { id } = req.params
         const userId = req.token.id
-        const { value } = req.body
+        const value = Number(req.body.value)
 
         if (![1, -1, 0].includes(value)) return res.status(400).json({ alert: { message: 'Invalid vote', variant: 'danger' } })
 
@@ -599,7 +624,7 @@ exports.searchForum = async (req, res) => {
         const regex = { $regex: escaped, $options: 'i' }
 
         if (type === 'communities') {
-            const communityQuery = { $or: [{ name: regex }, { description: regex }], privacy: { $ne: 'private' } }
+            const communityQuery = { $or: [{ name: regex }, { description: regex }], isPrivate: { $ne: true } }
             const total = await Community.countDocuments(communityQuery)
             const result = await Community.find(communityQuery)
                 .sort({ memberCount: -1 }).skip((page - 1) * limit).limit(Number(limit))
@@ -660,6 +685,88 @@ exports.reportContent = async (req, res) => {
         })
 
         res.json({ alert: { message: 'Report submitted. Thank you.', variant: 'success' } })
+    } catch (err) {
+        res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
+    }
+}
+
+exports.savePost = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+        const post = await ForumPost.findById(id)
+        if (!post) return res.status(404).json({ alert: { message: 'Post not found', variant: 'danger' } })
+        await User.findByIdAndUpdate(userId, { $addToSet: { savedPosts: id } })
+        res.json({ result: { saved: true, postId: id }, alert: { message: 'Post saved', variant: 'success' } })
+    } catch (err) {
+        res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
+    }
+}
+
+exports.unsavePost = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const { id } = req.params
+        await User.findByIdAndUpdate(userId, { $pull: { savedPosts: id } })
+        res.json({ result: { saved: false, postId: id }, alert: { message: 'Post removed from saved', variant: 'success' } })
+    } catch (err) {
+        res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
+    }
+}
+
+exports.getSavedPosts = async (req, res) => {
+    try {
+        const userId = req.token.id
+        const page = Math.max(1, parseInt(req.query.page) || 1)
+        const limit = Math.min(50, parseInt(req.query.limit) || 15)
+        const user = await User.findById(userId).select('savedPosts').lean()
+        const total = user?.savedPosts?.length || 0
+        const ids = (user?.savedPosts || []).slice((page - 1) * limit, page * limit)
+        const posts = await ForumPost.find({ _id: { $in: ids } })
+            .populate('author', 'username avatar')
+            .populate('community', 'name slug icon')
+            .sort({ createdAt: -1 })
+            .lean()
+        res.json({ result: posts, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    } catch (err) {
+        res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
+    }
+}
+
+exports.getForumReports = async (req, res) => {
+    try {
+        const role = req.token.role
+        if (role !== 'Admin' && role !== 'Moderator') {
+            return res.status(403).json({ alert: { message: 'Unauthorized', variant: 'danger' } })
+        }
+        const Report = require('../models/report.model')
+        const page = Math.max(1, parseInt(req.query.page) || 1)
+        const limit = Math.min(50, parseInt(req.query.limit) || 10)
+        const query = { type: { $in: ['forum_post', 'forum_comment'] } }
+        if (req.query.status && req.query.status !== 'all') query.status = req.query.status
+        const total = await Report.countDocuments(query)
+        const reports = await Report.find(query)
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .populate('user', 'username avatar')
+            .lean()
+        res.json({ result: reports, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    } catch (err) {
+        res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
+    }
+}
+
+exports.dismissReport = async (req, res) => {
+    try {
+        const role = req.token.role
+        if (role !== 'Admin' && role !== 'Moderator') {
+            return res.status(403).json({ alert: { message: 'Unauthorized', variant: 'danger' } })
+        }
+        const Report = require('../models/report.model')
+        const report = await Report.findByIdAndUpdate(req.params.id, { status: 'dismissed' }, { new: true })
+        if (!report) return res.status(404).json({ alert: { message: 'Report not found', variant: 'danger' } })
+        res.json({ result: report, alert: { message: 'Report dismissed', variant: 'success' } })
     } catch (err) {
         res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
     }
