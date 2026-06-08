@@ -5,9 +5,31 @@ const ForumComment = require('../models/forumComment.model')
 const ForumVote = require('../models/forumVote.model')
 const Notification = require('../models/notification.model')
 
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const MAX_TITLE_LENGTH = 300
+const MAX_CONTENT_LENGTH = 50000
+const MAX_TAGS = 20
+const MAX_IMAGES = 20
+const MAX_COMMENT_DEPTH = 8
+
 const emitNotification = async (io, notif) => {
     const populated = await Notification.findById(notif._id).populate('sender', 'username avatar').lean()
     io.to(`user:${notif.recipient}`).emit('new_notification', populated)
+}
+
+const getPrivateCommunityIds = async () => {
+    const privates = await Community.find({ privacy: 'private' }).select('_id').lean()
+    return privates.map(c => c._id)
+}
+
+const canAccessCommunity = async (communityId, userId) => {
+    if (!communityId) return true
+    const community = await Community.findById(communityId).select('privacy members').lean()
+    if (!community) return false
+    if (community.privacy !== 'private') return true
+    if (!userId) return false
+    return community.members.some(m => m.toString() === userId)
 }
 
 exports.getFeed = async (req, res) => {
@@ -21,7 +43,14 @@ exports.getFeed = async (req, res) => {
             communityIds = joined.map(c => c._id)
         }
 
-        const query = communityIds.length > 0 ? { community: { $in: communityIds } } : {}
+        const privateCommunityIds = await getPrivateCommunityIds()
+
+        let query
+        if (communityIds.length > 0) {
+            query = { community: { $in: communityIds } }
+        } else {
+            query = privateCommunityIds.length > 0 ? { community: { $nin: privateCommunityIds } } : {}
+        }
 
         let sortObj = { createdAt: -1 }
         if (sort === 'top') sortObj = { score: -1, createdAt: -1 }
@@ -48,15 +77,24 @@ exports.getFeed = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
     try {
+        const userId = req.token?.id
         const { page = 1, limit = 15, community, tag, sort = 'new', search } = req.query
         const query = {}
 
-        if (community) query.community = community
+        if (community) {
+            const hasAccess = await canAccessCommunity(community, userId)
+            if (!hasAccess) return res.status(403).json({ alert: { message: 'You do not have access to this community', variant: 'danger' } })
+            query.community = community
+        } else {
+            const privateCommunityIds = await getPrivateCommunityIds()
+            if (privateCommunityIds.length > 0) query.community = { $nin: privateCommunityIds }
+        }
         if (tag) query.tags = tag
         if (search) {
+            const escaped = escapeRegex(search)
             query.$or = [
-                { title: { $regex: search, $options: 'i' } },
-                { content: { $regex: search, $options: 'i' } }
+                { title: { $regex: escaped, $options: 'i' } },
+                { content: { $regex: escaped, $options: 'i' } }
             ]
         }
 
@@ -85,11 +123,17 @@ exports.getPosts = async (req, res) => {
 
 exports.getPost = async (req, res) => {
     try {
+        const userId = req.token?.id
         const post = await ForumPost.findById(req.params.id)
             .populate('author', 'username avatar')
-            .populate('community', 'name slug icon description memberCount moderators creator')
+            .populate('community', 'name slug icon description memberCount moderators creator privacy members')
 
         if (!post) return res.status(404).json({ alert: { message: 'Post not found', variant: 'danger' } })
+
+        if (post.community?.privacy === 'private') {
+            const isMember = userId && post.community.members?.some(m => m.toString() === userId)
+            if (!isMember) return res.status(403).json({ alert: { message: 'You do not have access to this post', variant: 'danger' } })
+        }
 
         post.viewCount += 1
         await post.save()
@@ -106,6 +150,10 @@ exports.createPost = async (req, res) => {
         const { title, content, communityId, tags, images } = req.body
 
         if (!title || !title.trim()) return res.status(400).json({ alert: { message: 'Title is required', variant: 'danger' } })
+        if (title.length > MAX_TITLE_LENGTH) return res.status(400).json({ alert: { message: `Title cannot exceed ${MAX_TITLE_LENGTH} characters`, variant: 'danger' } })
+        if (content && content.length > MAX_CONTENT_LENGTH) return res.status(400).json({ alert: { message: `Content is too long`, variant: 'danger' } })
+        if (tags && tags.length > MAX_TAGS) return res.status(400).json({ alert: { message: `Maximum ${MAX_TAGS} tags allowed`, variant: 'danger' } })
+        if (images && images.length > MAX_IMAGES) return res.status(400).json({ alert: { message: `Maximum ${MAX_IMAGES} images allowed`, variant: 'danger' } })
 
         const community = await Community.findById(communityId)
         if (!community) return res.status(404).json({ alert: { message: 'Community not found', variant: 'danger' } })
@@ -281,14 +329,13 @@ exports.votePost = async (req, res) => {
             )
         }
 
-        const upvotes = await ForumVote.countDocuments({ target: id, value: 1 })
-        const downvotes = await ForumVote.countDocuments({ target: id, value: -1 })
-        const upvoterIds = await ForumVote.find({ target: id, value: 1 }).distinct('user')
-        const downvoterIds = await ForumVote.find({ target: id, value: -1 }).distinct('user')
+        const votes = await ForumVote.find({ target: id }).select('user value').lean()
+        const upvoterIds = votes.filter(v => v.value === 1).map(v => v.user)
+        const downvoterIds = votes.filter(v => v.value === -1).map(v => v.user)
 
         post.upvotes = upvoterIds
         post.downvotes = downvoterIds
-        post.score = upvotes - downvotes
+        post.score = upvoterIds.length - downvoterIds.length
         await post.save()
 
         const io = req.app.get('io')
@@ -314,8 +361,15 @@ exports.votePost = async (req, res) => {
 
 exports.getComments = async (req, res) => {
     try {
+        const userId = req.token?.id
         const { id } = req.params
         const { sort = 'top', page = 1, limit = 30 } = req.query
+
+        const post = await ForumPost.findById(id).select('community').lean()
+        if (post) {
+            const hasAccess = await canAccessCommunity(post.community, userId)
+            if (!hasAccess) return res.status(403).json({ alert: { message: 'You do not have access', variant: 'danger' } })
+        }
 
         let sortObj = { score: -1, createdAt: -1 }
         if (sort === 'new') sortObj = { createdAt: -1 }
@@ -345,16 +399,30 @@ exports.createComment = async (req, res) => {
         const { content, parentId } = req.body
 
         if (!content || !content.trim()) return res.status(400).json({ alert: { message: 'Comment cannot be empty', variant: 'danger' } })
+        if (content.length > MAX_CONTENT_LENGTH) return res.status(400).json({ alert: { message: 'Comment is too long', variant: 'danger' } })
 
         const post = await ForumPost.findById(postId)
         if (!post) return res.status(404).json({ alert: { message: 'Post not found', variant: 'danger' } })
         if (post.isLocked) return res.status(400).json({ alert: { message: 'Post is locked', variant: 'danger' } })
 
+        const community = await Community.findById(post.community)
+        if (community && !community.members.some(m => m.toString() === userId)) {
+            return res.status(403).json({ alert: { message: 'Join the community first', variant: 'danger' } })
+        }
+
+        const ban = await CommunityBan.findOne({ user: userId, community: post.community })
+        if (ban && (!ban.expiresAt || new Date(ban.expiresAt) > new Date())) {
+            return res.status(403).json({ alert: { message: 'You are banned from this community', variant: 'danger' } })
+        }
+
         let depth = 0
         let parentComment = null
         if (parentId) {
             parentComment = await ForumComment.findById(parentId)
-            if (parentComment) depth = parentComment.depth + 1
+            if (!parentComment) return res.status(404).json({ alert: { message: 'Parent comment not found', variant: 'danger' } })
+            if (parentComment.post.toString() !== postId) return res.status(400).json({ alert: { message: 'Parent comment does not belong to this post', variant: 'danger' } })
+            depth = parentComment.depth + 1
+            if (depth > MAX_COMMENT_DEPTH) return res.status(400).json({ alert: { message: 'Maximum comment depth reached', variant: 'danger' } })
         }
 
         const comment = await ForumComment.create({
@@ -416,6 +484,9 @@ exports.updateComment = async (req, res) => {
         const userId = req.token.id
         const { content } = req.body
 
+        if (!content || !content.trim()) return res.status(400).json({ alert: { message: 'Comment cannot be empty', variant: 'danger' } })
+        if (content.length > MAX_CONTENT_LENGTH) return res.status(400).json({ alert: { message: 'Comment is too long', variant: 'danger' } })
+
         const comment = await ForumComment.findById(id)
         if (!comment) return res.status(404).json({ alert: { message: 'Comment not found', variant: 'danger' } })
         if (comment.author.toString() !== userId) return res.status(403).json({ alert: { message: 'Unauthorized', variant: 'danger' } })
@@ -457,11 +528,10 @@ exports.deleteComment = async (req, res) => {
         } else {
             await ForumVote.deleteMany({ target: id })
             await ForumComment.findByIdAndDelete(id)
-        }
-
-        if (post) {
-            post.commentCount = Math.max(0, post.commentCount - 1)
-            await post.save()
+            if (post) {
+                post.commentCount = Math.max(0, post.commentCount - 1)
+                await post.save()
+            }
         }
 
         res.json({ deletedId: id, alert: { message: 'Comment deleted', variant: 'success' } })
@@ -491,14 +561,13 @@ exports.voteComment = async (req, res) => {
             )
         }
 
-        const upvotes = await ForumVote.countDocuments({ target: id, value: 1 })
-        const downvotes = await ForumVote.countDocuments({ target: id, value: -1 })
-        const upvoterIds = await ForumVote.find({ target: id, value: 1 }).distinct('user')
-        const downvoterIds = await ForumVote.find({ target: id, value: -1 }).distinct('user')
+        const votes = await ForumVote.find({ target: id }).select('user value').lean()
+        const upvoterIds = votes.filter(v => v.value === 1).map(v => v.user)
+        const downvoterIds = votes.filter(v => v.value === -1).map(v => v.user)
 
         comment.upvotes = upvoterIds
         comment.downvotes = downvoterIds
-        comment.score = upvotes - downvotes
+        comment.score = upvoterIds.length - downvoterIds.length
         await comment.save()
 
         res.json({ result: { commentId: id, score: comment.score, upvotes: upvoterIds, downvotes: downvoterIds } })
@@ -526,11 +595,13 @@ exports.searchForum = async (req, res) => {
         const { q, type = 'posts', page = 1, limit = 15 } = req.query
         if (!q) return res.json({ result: [], pagination: { total: 0 } })
 
-        const regex = { $regex: q, $options: 'i' }
+        const escaped = escapeRegex(q)
+        const regex = { $regex: escaped, $options: 'i' }
 
         if (type === 'communities') {
-            const total = await Community.countDocuments({ $or: [{ name: regex }, { description: regex }] })
-            const result = await Community.find({ $or: [{ name: regex }, { description: regex }] })
+            const communityQuery = { $or: [{ name: regex }, { description: regex }], privacy: { $ne: 'private' } }
+            const total = await Community.countDocuments(communityQuery)
+            const result = await Community.find(communityQuery)
                 .sort({ memberCount: -1 }).skip((page - 1) * limit).limit(Number(limit))
                 .populate('creator', 'username avatar').lean()
             return res.json({ result, pagination: { total, page: Number(page), pages: Math.ceil(total / limit) } })
@@ -545,11 +616,50 @@ exports.searchForum = async (req, res) => {
             return res.json({ result, pagination: { total, page: Number(page), pages: Math.ceil(total / limit) } })
         }
 
-        const total = await ForumPost.countDocuments({ $or: [{ title: regex }, { content: regex }] })
-        const result = await ForumPost.find({ $or: [{ title: regex }, { content: regex }] })
-            .sort({ score: -1, createdAt: -1 }).skip((page - 1) * limit).limit(Number(limit))
+        const privateCommunityIds = await getPrivateCommunityIds()
+        const postQuery = {
+            $text: { $search: q },
+            ...(privateCommunityIds.length > 0 ? { community: { $nin: privateCommunityIds } } : {})
+        }
+        const total = await ForumPost.countDocuments(postQuery)
+        const result = await ForumPost.find(postQuery, { textScore: { $meta: 'textScore' } })
+            .sort({ textScore: { $meta: 'textScore' }, score: -1 }).skip((page - 1) * limit).limit(Number(limit))
             .populate('author', 'username avatar').populate('community', 'name slug icon').lean()
         res.json({ result, pagination: { total, page: Number(page), pages: Math.ceil(total / limit) } })
+    } catch (err) {
+        res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
+    }
+}
+
+exports.reportContent = async (req, res) => {
+    try {
+        const Report = require('../models/report.model')
+        const User = require('../models/user.model')
+        const userId = req.token.id
+        const { contentId, type, reason, details } = req.body
+
+        if (!contentId || !type) return res.status(400).json({ alert: { message: 'Missing required fields', variant: 'danger' } })
+        if (!['forum_post', 'forum_comment'].includes(type)) return res.status(400).json({ alert: { message: 'Invalid report type', variant: 'danger' } })
+
+        const validReasons = ['Spam', 'Harassment', 'Misinformation', 'Not Appropriate', 'Other']
+        if (reason && !validReasons.includes(reason)) return res.status(400).json({ alert: { message: 'Invalid reason', variant: 'danger' } })
+
+        const existing = await Report.findOne({ user: userId, content_id: contentId, type })
+        if (existing) return res.status(400).json({ alert: { message: 'You have already reported this', variant: 'warning' } })
+
+        const reporter = await User.findById(userId).select('username email').lean()
+
+        await Report.create({
+            user: userId,
+            content_id: contentId,
+            type,
+            reason: reason || 'Other',
+            details: (details || '').trim().slice(0, 1000) || 'No additional details',
+            name: reporter?.username || 'Unknown',
+            email: reporter?.email || 'unknown@unknown.com',
+        })
+
+        res.json({ alert: { message: 'Report submitted. Thank you.', variant: 'success' } })
     } catch (err) {
         res.status(500).json({ alert: { message: err.message, variant: 'danger' } })
     }

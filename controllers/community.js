@@ -21,9 +21,10 @@ exports.getCommunities = async (req, res) => {
         const query = {}
 
         if (search) {
+            const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             query.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { description: { $regex: search, $options: 'i' } }
+                { name: { $regex: escaped, $options: 'i' } },
+                { description: { $regex: escaped, $options: 'i' } }
             ]
         }
 

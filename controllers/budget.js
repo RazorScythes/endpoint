@@ -181,12 +181,14 @@ exports.getExpenses = async (req, res) => {
 exports.createExpense = async (req, res) => {
     try {
         const userId = req.budgetUserId || req.token.id
-        const { date, category, type, paymentMethod, notes, items, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
+        const { date, category, type, paymentMethod, notes, items, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments, tags } = req.body
 
         if (category) {
             const cat = await BudgetCategory.findOne({ _id: category, $or: [{ user: userId }, { sharedWith: userId }] }).lean()
             if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
         }
+
+        const parsedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim().toLowerCase()) : []
 
         if (items && Array.isArray(items) && items.length > 0) {
             const valid = items.filter(i => i.description && !isNaN(parseFloat(i.amount)))
@@ -207,6 +209,7 @@ exports.createExpense = async (req, res) => {
                 isRecurring: !!isRecurring,
                 recurrenceRule: recurrenceRule || '',
                 recurrenceEnd: recurrenceEnd || null,
+                tags: parsedTags,
             }))
             await Expense.insertMany(docs)
         } else {
@@ -219,6 +222,7 @@ exports.createExpense = async (req, res) => {
                 currency: currency || 'PHP', listOnly: !!listOnly,
                 attachments: Array.isArray(attachments) ? attachments : [],
                 isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
+                tags: parsedTags,
             }).save()
         }
 
@@ -238,7 +242,7 @@ exports.createExpense = async (req, res) => {
 exports.updateExpense = async (req, res) => {
     try {
         const userId = req.budgetUserId || req.token.id
-        const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments } = req.body
+        const { id, date, description, category, amount, type, paymentMethod, notes, month, year, currency, isRecurring, recurrenceRule, recurrenceEnd, listOnly, attachments, tags } = req.body
 
         const parsedAmount = parseFloat(amount)
         if (!description || isNaN(parsedAmount)) return res.status(400).json({ alert: { variant: 'danger', message: 'Description and valid amount are required' } })
@@ -248,11 +252,14 @@ exports.updateExpense = async (req, res) => {
             if (!cat) return res.status(403).json({ alert: { variant: 'danger', message: 'Category not found or not authorized' } })
         }
 
+        const parsedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim().toLowerCase()) : []
+
         const updated = await Expense.findOneAndUpdate({ _id: id, user: userId }, {
             date, description, category: category || null, amount: parsedAmount, type, paymentMethod, notes,
             currency: currency || 'PHP', listOnly: !!listOnly,
             attachments: Array.isArray(attachments) ? attachments : [],
             isRecurring: !!isRecurring, recurrenceRule: recurrenceRule || '', recurrenceEnd: recurrenceEnd || null,
+            tags: parsedTags,
         })
         if (!updated) return res.status(404).json({ alert: { variant: 'danger', message: 'Transaction not found' } })
 
@@ -1325,7 +1332,8 @@ exports.saveBudgetSettings = async (req, res) => {
 
 exports.shareBudget = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        // Always use the logged-in user's ID - you can only share YOUR OWN budget
+        const userId = req.token.id
         const { username, role } = req.body
 
         if (!username) return res.status(400).json({ alert: { variant: 'danger', message: 'Username is required' } })
@@ -1356,7 +1364,8 @@ exports.shareBudget = async (req, res) => {
 
 exports.unshareBudget = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        // Always use the logged-in user's ID - you can only manage YOUR OWN shares
+        const userId = req.token.id
         const { targetUserId } = req.body
 
         if (!targetUserId) return res.status(400).json({ alert: { variant: 'danger', message: 'Target user ID is required' } })
@@ -1378,7 +1387,8 @@ exports.unshareBudget = async (req, res) => {
 
 exports.updateBudgetShare = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        // Always use the logged-in user's ID - you can only manage YOUR OWN shares
+        const userId = req.token.id
         const { targetUserId, role } = req.body
 
         if (!targetUserId || !role) return res.status(400).json({ alert: { variant: 'danger', message: 'Target user and role are required' } })
@@ -1401,7 +1411,8 @@ exports.updateBudgetShare = async (req, res) => {
 
 exports.getSharedBudgets = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        // Always use the logged-in user's ID - find budgets shared WITH me
+        const userId = req.token.id
         const shares = await BudgetShare.find({ sharedWith: userId }).populate('owner', 'username avatar').lean()
         return res.status(200).json({ result: shares })
     } catch (err) {
@@ -1412,7 +1423,8 @@ exports.getSharedBudgets = async (req, res) => {
 
 exports.getSharedUsers = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        // Always use the logged-in user's ID - find users I shared MY budget with
+        const userId = req.token.id
         const shares = await BudgetShare.find({ owner: userId }).populate('sharedWith', 'username avatar').lean()
         return res.status(200).json({ result: shares })
     } catch (err) {

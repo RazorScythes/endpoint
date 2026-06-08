@@ -12,6 +12,7 @@ const budgetCategorySchema = new Schema({
     type: { type: String, enum: ['expense', 'income'], default: 'expense' },
     budget: { type: Number, default: 0 },
     rollover: { type: Boolean, default: false },
+    rolloverRule: { type: String, enum: ['none', 'carry', 'savings', 'reset'], default: 'none' },
     sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 },{
     timestamps: true,

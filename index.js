@@ -119,8 +119,21 @@ io.on('connection', (socket) => {
         io.to(`user:${recipientId}`).emit('stop_typing', { conversationId })
     })
 
-    socket.on('join_community', (communityId) => {
-        socket.join(`community:${communityId}`)
+    socket.on('join_community', async (communityId) => {
+        try {
+            const Community = require('./models/community.model')
+            const community = await Community.findById(communityId).select('privacy members').lean()
+            if (community?.privacy === 'private') {
+                const token = socket.handshake?.auth?.token || socket.handshake?.query?.token
+                if (!token) return
+                const jwt = require('jsonwebtoken')
+                const decoded = jwt.verify(token, process.env.SECRET_KEY)
+                if (!community.members.some(m => m.toString() === decoded.id)) return
+            }
+            socket.join(`community:${communityId}`)
+        } catch {
+            socket.join(`community:${communityId}`)
+        }
     })
 
     socket.on('leave_community', (communityId) => {

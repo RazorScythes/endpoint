@@ -22,6 +22,7 @@ const exchangeRateSchema = new Schema({
         dateFormat: { type: String, default: 'en-US' },
         decimalPlaces: { type: Number, default: 2 },
         startOfWeek: { type: String, default: 'monday' },
+        template: { type: String, default: 'default' },
     }
 },{
     timestamps: true,

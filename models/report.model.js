@@ -13,14 +13,14 @@ const schema = Schema({
     },
     type: {
         type: String,
-        enum: ['video', 'comment'],
+        enum: ['video', 'comment', 'forum_post', 'forum_comment'],
         default: 'video'
     },
     name: { type: String, required: true },
     email: { type: String, required: true },
     reason: {
         type: String,
-        enum: ['Non consensual', 'Spammer', 'Child Pornography', 'Underage', 'Nevermind', 'Not Appropriate', 'Other'],
+        enum: ['Non consensual', 'Spammer', 'Child Pornography', 'Underage', 'Nevermind', 'Not Appropriate', 'Spam', 'Harassment', 'Misinformation', 'Other'],
         default: 'Other'
     },
     details: { type: String, required: true },
