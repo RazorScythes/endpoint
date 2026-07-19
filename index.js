@@ -70,6 +70,7 @@ const communityRoutes           = require('./routes/community')
 const forumRoutes               = require('./routes/forum')
 const blobStorageRoutes         = require('./routes/blobStorage')
 const mongoStorageRoutes        = require('./routes/mongoStorage')
+const vaultRoutes               = require('./routes/vault')
 
 const app    = express()
 const server = http.createServer(app)
@@ -235,3 +236,4 @@ app.use('/community', communityRoutes);
 app.use('/forum', forumRoutes);
 app.use('/blob-storage', blobStorageRoutes);
 app.use('/mongo-storage', mongoStorageRoutes);
+app.use('/vault', vaultRoutes);

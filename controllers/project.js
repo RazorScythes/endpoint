@@ -26,7 +26,8 @@ async function attachCommentCounts(projects) {
 exports.getUserProject = async (req, res) => {
     try {
         const { id } = req.body
-        const projects = await Project.find({ user: id }).sort({ createdAt: -1 }).lean()
+        let projects = await Project.find({ user: id }).sort({ createdAt: -1 }).lean()
+        projects = await attachCommentCounts(projects)
         return res.status(200).json({ result: projects })
     } catch (err) {
         console.log(err)
@@ -217,9 +218,14 @@ exports.getProjectByID = async (req, res) => {
             .lean()
         if (!project) return res.status(404).json({ message: 'Project not found', variant: 'danger', notFound: true })
 
+        const isOwner = userId && String(project.user._id || project.user) === String(userId)
+        const isCollab = userId && project.collaborators?.some(c => String(c.user?._id || c.user) === String(userId))
+
+        if (project.status !== 'completed' && !isOwner && !isCollab) {
+            return res.status(404).json({ message: 'Project not found', variant: 'danger', notFound: true })
+        }
+
         if (project.privacy) {
-            const isOwner = userId && String(project.user._id || project.user) === String(userId)
-            const isCollab = userId && project.collaborators?.some(c => String(c.user?._id || c.user) === String(userId))
             if (!isOwner && !isCollab) {
                 if (!access_key) {
                     return res.status(200).json({ message: 'This project is private', variant: 'danger', forbidden: 'private' })
@@ -287,7 +293,7 @@ exports.getCategory = async (req, res) => {
 exports.getProjects = async (req, res) => {
     try {
         const { id } = req.body
-        const query = id ? { user: id } : { privacy: { $ne: true } }
+        const query = id ? { user: id } : { privacy: { $ne: true }, status: 'completed' }
         let projects = await Project.find(query)
             .populate({ path: 'user', select: 'username avatar' })
             .sort({ createdAt: -1 })
@@ -304,7 +310,7 @@ exports.getProjects = async (req, res) => {
 exports.getProjectsByCategories = async (req, res) => {
     try {
         const { category } = req.body
-        let projects = await Project.find({ categories: category, privacy: { $ne: true } })
+        let projects = await Project.find({ categories: category, privacy: { $ne: true }, status: 'completed' })
             .populate({ path: 'user', select: 'username avatar' })
             .sort({ createdAt: -1 })
             .lean()
@@ -333,6 +339,7 @@ exports.getProjectsBySearchKey = async (req, res) => {
         const regex = new RegExp(escapeRegex(key), 'i')
         let projects = await Project.find({
             privacy: { $ne: true },
+            status: 'completed',
             $or: [
                 { post_title: regex },
                 { tags: regex },
@@ -387,6 +394,7 @@ exports.getRelatedProjects = async (req, res) => {
         const query = {
             _id: { $ne: projectId },
             privacy: { $ne: true },
+            status: 'completed',
         }
         if (or.length > 0) query.$or = or
 
@@ -437,7 +445,7 @@ exports.uploadProjectComment = async (req, res) => {
                 recipientId: existing.user,
                 senderId: req.body.user,
                 type: 'comment',
-                message: `commented on your project "${existing.title || 'Untitled'}"`,
+                message: `commented on your project "${existing.post_title || 'Untitled'}"`,
                 link: `/projects/${req.body.parent_id}`,
                 referenceId: req.body.parent_id,
                 referenceModel: 'Project',
@@ -639,7 +647,7 @@ exports.getProjectAnalytics = async (req, res) => {
 
 exports.getLatestProjects = async (req, res) => {
     try {
-        let projects = await Project.find({ privacy: { $ne: true } })
+        let projects = await Project.find({ privacy: { $ne: true }, status: 'completed' })
             .populate({ path: 'user', select: 'username avatar' })
             .sort({ createdAt: -1 })
             .limit(10)

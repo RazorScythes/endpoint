@@ -367,12 +367,15 @@ exports.googleLogin = async (req, res) => {
     }
 
     try {
-        let verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
-        if (!verifyRes.ok) {
-            verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${credential}`);
-        }
+        const verifyRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${credential}` },
+        });
         if (!verifyRes.ok) {
             return res.status(401).json({ message: 'Invalid Google credential' });
+        }
+        const verifiedInfo = await verifyRes.json();
+        if (verifiedInfo.email !== email) {
+            return res.status(401).json({ message: 'Google credential email mismatch' });
         }
 
         let user = await Users.findOne({ email }).populate('profile_id');

@@ -60,7 +60,8 @@ exports.updateGame = async (req, res) => {
         const data = req.body
 
         const { user: _u, _id, deleted_at: _d, ...safeData } = data
-        await Game.findOneAndUpdate({ _id: id, user: userId, deleted_at: null }, { $set: safeData })
+        const updated = await Game.findOneAndUpdate({ _id: id, user: userId, deleted_at: null }, { $set: safeData })
+        if (!updated) return res.status(404).json({ message: 'Game not found or not owned by you', variant: 'danger' })
         const games = await Game.find(activeFilter(userId)).sort({ createdAt: -1 }).lean()
 
         return res.status(200).json({ result: games, alert: 'Game updated successfully', variant: 'success' })

@@ -23,9 +23,9 @@ exports.getGames = async (req, res) => {
         const conditions = [{ deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -57,6 +57,10 @@ exports.getGameByID = async (req, res) => {
         if (!game) return res.status(404).json({ message: 'Game not found', variant: 'danger', notFound: true })
 
         const isOwner = id && game.user._id.toString() === id
+
+        if (game.status !== 'published' && !isOwner) {
+            return res.status(404).json({ message: 'Game not found', variant: 'danger', notFound: true })
+        }
 
         if (game.strict && !isOwner) {
             const safeContent = await getUserSafeContent(id)
@@ -129,9 +133,9 @@ exports.getRelatedGames = async (req, res) => {
         const conditions = [filter]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -242,9 +246,9 @@ exports.countTags = async (req, res) => {
         const conditions = [{ deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -283,9 +287,9 @@ exports.categoriesCount = async (req, res) => {
         const conditions = [{ deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -323,9 +327,9 @@ exports.getGameByTag = async (req, res) => {
         const conditions = [{ tags: { $in: [safeTag] }, deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -355,9 +359,9 @@ exports.getGameByDeveloper = async (req, res) => {
         const conditions = [{ 'details.developer': { $regex: escapeRegex(developer), $options: 'i' }, deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -411,9 +415,9 @@ exports.getGameBySearchKey = async (req, res) => {
         const conditions = [baseQuery, { deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -455,9 +459,9 @@ exports.getRecentGameBlog = async (req, res) => {
         const conditions = [{ deleted_at: null }]
 
         if (id) {
-            conditions.push({ $or: [{ privacy: false }, { user: id }] })
+            conditions.push({ $or: [{ privacy: false, status: 'published' }, { user: id }] })
         } else {
-            conditions.push({ privacy: false })
+            conditions.push({ privacy: false, status: 'published' })
         }
 
         if (safeContent) {
@@ -501,8 +505,8 @@ exports.addRecentGamingBlogLikes = async (req, res) => {
 
         const viewerId = userId || ''
         const query = viewerId
-            ? { $or: [{ privacy: false }, { user: viewerId }], deleted_at: null }
-            : { privacy: false, deleted_at: null }
+            ? { $or: [{ privacy: false, status: 'published' }, { user: viewerId }], deleted_at: null }
+            : { privacy: false, status: 'published', deleted_at: null }
 
         const games = await Game.find(query)
             .populate({ path: 'user', select: 'username avatar' })

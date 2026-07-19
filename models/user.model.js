@@ -57,6 +57,8 @@ const schema = Schema({
     },
     contribution: { type: Number },
     savedPosts: [{ type: Schema.Types.ObjectId, ref: 'ForumPost' }],
+    vaultSalt: { type: String, default: '' },
+    vaultAuthHash: { type: String, default: '' },
 },{
     timestamps: true
 })

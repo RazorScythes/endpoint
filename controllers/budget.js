@@ -409,10 +409,17 @@ exports.importCSV = async (req, res) => {
         }
 
         if (rows.some(r => r.category)) {
-            const catIds = [...new Set(rows.filter(r => r.category).map(r => r.category))]
-            const validCats = await BudgetCategory.find({ _id: { $in: catIds }, $or: [{ user: userId }, { sharedWith: userId }] }).select('_id').lean()
-            const validCatIds = new Set(validCats.map(c => c._id.toString()))
-            rows.forEach(r => { if (r.category && !validCatIds.has(r.category)) r.category = null })
+            const userCats = await BudgetCategory.find({ $or: [{ user: userId }, { sharedWith: userId }] }).select('_id name').lean()
+            const catIdSet = new Set(userCats.map(c => c._id.toString()))
+            const catNameMap = {}
+            userCats.forEach(c => { catNameMap[c.name.toLowerCase()] = c._id.toString() })
+
+            rows.forEach(r => {
+                if (!r.category) return
+                if (catIdSet.has(r.category)) return
+                const resolved = catNameMap[r.category.toLowerCase()]
+                r.category = resolved || null
+            })
         }
 
         const docs = rows.filter(r => r.description && !isNaN(parseFloat(r.amount))).map(r => ({
@@ -469,7 +476,7 @@ exports.getInitialLoad = async (req, res) => {
         ] = await Promise.all([
             Expense.find({ user: userId, date: { $gte: start, $lte: end } }).populate('category', 'name icon color type budget rollover').sort({ date: -1 }).lean(),
             fetchCategories(userId),
-            Savings.findOne({ user: userId }).lean(),
+            Savings.findOne({ user: req.token.id }).lean(),
             Debt.find({ user: userId }).sort({ createdAt: -1 }).lean(),
             BudgetList.find({ user: userId }).sort({ createdAt: -1 }).lean(),
             FinancialGoal.find({ user: userId }).populate('category', 'name icon color').sort({ createdAt: -1 }).lean(),
@@ -710,7 +717,7 @@ exports.processRecurring = async (req, res) => {
 
 exports.getSavings = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        const userId = req.token.id
         const savings = await Savings.findOne({ user: userId }).lean()
         return res.status(200).json({ result: savings?.denominations || {} })
     } catch (err) {
@@ -721,7 +728,7 @@ exports.getSavings = async (req, res) => {
 
 exports.saveSavings = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        const userId = req.token.id
         const { denominations } = req.body
 
         const existing = await Savings.findOne({ user: userId }).lean()
@@ -770,7 +777,7 @@ exports.saveSavings = async (req, res) => {
 
 exports.getSavingsHistory = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        const userId = req.token.id
         const history = await SavingsHistory.find({ user: userId }).sort({ createdAt: -1 }).limit(50).lean()
         return res.status(200).json({ result: history })
     } catch (err) {
@@ -781,7 +788,7 @@ exports.getSavingsHistory = async (req, res) => {
 
 exports.deleteSavingsHistory = async (req, res) => {
     try {
-        const userId = req.budgetUserId || req.token.id
+        const userId = req.token.id
         const { id } = req.params
         await SavingsHistory.deleteOne({ _id: id, user: userId })
         const history = await SavingsHistory.find({ user: userId }).sort({ createdAt: -1 }).limit(50).lean()

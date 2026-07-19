@@ -23,6 +23,7 @@ const exchangeRateSchema = new Schema({
         decimalPlaces: { type: Number, default: 2 },
         startOfWeek: { type: String, default: 'monday' },
         template: { type: String, default: 'default' },
+        hiddenTabs: { type: [String], default: [] },
     }
 },{
     timestamps: true,

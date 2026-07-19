@@ -100,6 +100,18 @@ exports.userRequired = async (req, res, next) => {
     }
 }
 
+exports.adminRequired = async (req, res, next) => {
+    try {
+        const user = req.token?.user
+        if (!user || user.role !== 'Admin') {
+            return res.status(403).json({ message: 'Admin access required', variant: 'danger' })
+        }
+        next()
+    } catch (error) {
+        return res.status(403).json({ message: 'Admin access required', variant: 'danger' })
+    }
+}
+
 exports.allowCors = (fn) => async (req, res) => {
     res.setHeader('Access-Control-Allow-Credentials', true)
     res.setHeader('Access-Control-Allow-Origin', '*')

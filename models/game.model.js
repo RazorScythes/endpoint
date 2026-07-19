@@ -33,7 +33,7 @@ const schema = Schema({
     }],
     download_link: [{
         storage_name: { type: String },
-        links: [{ type: String }]
+        links: [{ type: Schema.Types.Mixed }]
     }],
     guide_link: { type: String, default: '' },
     password: { type: String, default: '' },
