@@ -25,7 +25,7 @@ exports.getVaultStatus = async (req, res) => {
         const user = await User.findById(userId).select('vaultSalt vaultAuthHash').lean()
         const hasVault = !!(user?.vaultSalt && user?.vaultAuthHash)
         const entryCount = hasVault ? await VaultEntry.countDocuments({ user: userId, deleted: false }) : 0
-        return res.status(200).json({ hasVault, entryCount })
+        return res.status(200).json({ hasVault, entryCount, salt: user?.vaultSalt || '' })
     } catch (err) {
         return res.status(500).json({ message: 'Server error', variant: 'danger' })
     }
